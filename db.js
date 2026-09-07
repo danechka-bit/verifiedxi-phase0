@@ -257,8 +257,21 @@ async function searchablePlayers() {
     .filter(p => p.seasons.length > 0);
 }
 
+// Real counts for the homepage ticker — no placeholder numbers.
+async function stats() {
+  const { rows } = await pool.query(`
+    SELECT
+      (SELECT COUNT(DISTINCT player_id) FROM seasons WHERE verification_status = 'verified')::int AS verified_players,
+      (SELECT COUNT(*) FROM scouts WHERE verification_status = 'verified')::int AS verified_scouts,
+      ((SELECT COUNT(*) FROM guardians WHERE id_verification_status = 'submitted')
+        + (SELECT COUNT(*) FROM seasons WHERE verification_status = 'submitted')
+        + (SELECT COUNT(*) FROM scouts WHERE verification_status = 'pending'))::int AS pending_reviews
+  `);
+  return rows[0];
+}
+
 module.exports = {
-  init,
+  init, stats,
   createGuardian, approveGuardian, rejectGuardian, getGuardian,
   setGuardianStripeSession, setGuardianLastError, getPlayerByGuardian,
   createPlayer, getPlayer, listPlayers,

@@ -4,7 +4,11 @@ const url = require('url');
 const querystring = require('querystring');
 const db = require('./db');
 const identity = require('./identity');
-const { layout, escapeHtml, statusBadge } = require('./views');
+const { layout, escapeHtml, statusBadge, initials } = require('./views');
+
+const PLAYER_ICON = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-6 8-6s8 2 8 6"/></svg>';
+const SCOUT_ICON = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
+const STAFF_ICON = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>';
 
 const PORT = process.env.PORT || 3000;
 
@@ -28,32 +32,53 @@ function redirect(res, path) {
 
 // ---------------- Pages ----------------
 
-function homePage() {
+async function homePage() {
+  const s = await db.stats();
   return layout('Home', `
-    <h1>VerifiedXI — Phase 0</h1>
-    <p class="sub">This is the concierge MVP: real guardian ID gate, real data persistence, but stat matching against lff.lv is done by a human in the admin queue — not automated. That's intentional (see the backend plan).</p>
-    <div class="card">
-      <b>Try it as a player</b>
-      <p class="hint">Create a profile → submit a guardian for ID review → once approved, submit a season's stats for manual verification.</p>
-      <a class="btn" href="/player/new">Start as a player</a>
+    <div class="eyebrow">Welcome</div>
+    <h1>Get your stats seen —<br>and believed.</h1>
+    <p class="sub">Real guardian ID verification, real data persistence. Stat matching against lff.lv is done by a human in the admin queue — not automated, and that's intentional (see the README).</p>
+
+    <div class="ticker">
+      <div class="tstat"><div class="tnum">${s.verified_players}</div><div class="tlbl">Verified players</div></div>
+      <div class="tdiv"></div>
+      <div class="tstat"><div class="tnum">${s.verified_scouts}</div><div class="tlbl">Scouts active</div></div>
+      <div class="tdiv"></div>
+      <div class="tstat"><div class="tnum">${s.pending_reviews}</div><div class="tlbl">In review</div></div>
     </div>
-    <div class="card">
-      <b>Try it as a scout</b>
-      <p class="hint">Sign up an organization → wait for review → search verified players once approved.</p>
-      <a class="btn secondary" href="/scout/new">Start as a scout</a>
-    </div>
-    <div class="card">
-      <b>Play staff</b>
-      <p class="hint">Approve guardians, verify seasons, and approve scouts from the review queue.</p>
-      <a class="btn secondary" href="/admin">Open admin queue</a>
-    </div>
+
+    <a class="tap-card" href="/player/new">
+      <div class="icon">${PLAYER_ICON}</div>
+      <div>
+        <div class="title">I'm a player</div>
+        <div class="desc">Build a verified profile from your club stats</div>
+      </div>
+      <div class="chev">›</div>
+    </a>
+    <a class="tap-card" href="/scout/new">
+      <div class="icon">${SCOUT_ICON}</div>
+      <div>
+        <div class="title">I'm a scout</div>
+        <div class="desc">Find players with confirmed performance data</div>
+      </div>
+      <div class="chev">›</div>
+    </a>
+    <a class="tap-card" href="/admin">
+      <div class="icon">${STAFF_ICON}</div>
+      <div>
+        <div class="title">I'm staff</div>
+        <div class="desc">Approve guardians, verify seasons, approve scouts</div>
+      </div>
+      <div class="chev">›</div>
+    </a>
   `);
 }
 
 function playerNewPage() {
   return layout('New player', `
-    <h1>Create a player profile</h1>
-    <p class="sub">If the player is under 18, a guardian must be verified before the profile goes live.</p>
+    <div class="eyebrow">Player signup</div>
+    <h1>Set up your profile</h1>
+    <p class="sub">This is what scouts will see first. If the player is under 18, a guardian must be verified before the profile goes live.</p>
     <form method="POST" action="/player/new">
       <label>Full name</label><input name="full_name" required value="Toms Ozoliņš">
       <label>Position</label>
@@ -74,8 +99,14 @@ function playerNewPage() {
 function playerStatusPage(player, guardian, seasons) {
   const canAddSeason = player.profile_status === 'active';
   return layout('Player profile', `
-    <h1>${escapeHtml(player.full_name)} ${statusBadge(player.profile_status)}</h1>
-    <p class="sub">${escapeHtml(player.position)} · ${escapeHtml(player.club)} · born ${player.birth_year}</p>
+    <div class="eyebrow">Player profile</div>
+    <div class="profile-head">
+      <div class="avatar">${escapeHtml(initials(player.full_name))}</div>
+      <div>
+        <div class="name">${escapeHtml(player.full_name.toUpperCase())} ${statusBadge(player.profile_status)}</div>
+        <div class="meta">${escapeHtml(player.position)} · ${escapeHtml(player.club)} · born ${player.birth_year}</div>
+      </div>
+    </div>
 
     ${guardian ? `
       <div class="card">
@@ -121,6 +152,7 @@ function playerStatusPage(player, guardian, seasons) {
 
 function scoutNewPage() {
   return layout('New scout', `
+    <div class="eyebrow">Before you search</div>
     <h1>Verify your organization</h1>
     <p class="sub">Every scout account is reviewed before search access is granted.</p>
     <form method="POST" action="/scout/new">
@@ -136,6 +168,7 @@ function scoutNewPage() {
 
 function scoutStatusPage(scout) {
   return layout('Scout status', `
+    <div class="eyebrow">Scout status</div>
     <h1>${escapeHtml(scout.name)} ${statusBadge(scout.verification_status)}</h1>
     <p class="sub">${escapeHtml(scout.organization)} · ${escapeHtml(scout.role)}</p>
     ${scout.verification_status === 'verified'
@@ -147,18 +180,26 @@ function scoutStatusPage(scout) {
 function searchPage(scout, players) {
   if (!scout || scout.verification_status !== 'verified') {
     return layout('Search', `
+      <div class="eyebrow">Scout search</div>
       <h1>Search players</h1>
       <p class="sub">You need a verified scout account to search. <a href="/scout/new">Sign up</a> or check your status if you already did.</p>
     `);
   }
   return layout('Search players', `
-    <h1>Verified players</h1>
-    <p class="sub">Signed in as ${escapeHtml(scout.name)} · ${escapeHtml(scout.organization)} ${statusBadge('verified')}</p>
+    <div class="eyebrow">Verified · ${escapeHtml(scout.organization)}</div>
+    <h1>Find players</h1>
+    <p class="sub">Signed in as ${escapeHtml(scout.name)}</p>
     ${players.length === 0 ? `<p class="hint">No verified players yet — verify a season from the admin queue to see one here.</p>` : ''}
     ${players.map(p => `
       <div class="card">
-        <div class="row"><b>${escapeHtml(p.full_name)}</b> ${statusBadge('active')}</div>
-        <p class="hint">${escapeHtml(p.position)} · ${escapeHtml(p.club)} · born ${p.birth_year}</p>
+        <div class="player-row" style="border:none;background:transparent;padding:0;margin-bottom:14px;">
+          <div class="avatar">${escapeHtml(initials(p.full_name))}</div>
+          <div>
+            <div class="rname">${escapeHtml(p.full_name)}</div>
+            <div class="rmeta">${escapeHtml(p.position)} · ${escapeHtml(p.club)} · born ${p.birth_year}</div>
+          </div>
+          <div style="margin-left:auto;">${statusBadge('active')}</div>
+        </div>
         ${p.seasons.map(s => `
           <div class="stat-grid">
             <div class="stat-box"><b>${s.apps}</b><span>Apps</span></div>
@@ -178,6 +219,7 @@ async function adminPage() {
   const seasons = await db.pendingSeasons();
   const scouts = await db.pendingScouts();
   return layout('Admin queue', `
+    <div class="eyebrow">Play staff</div>
     <h1>Review queue</h1>
 
     <div class="section-title">Guardians awaiting ID review (${guardians.length})</div>
@@ -240,7 +282,7 @@ const server = http.createServer(async (req, res) => {
   const method = req.method;
 
   try {
-    if (method === 'GET' && path === '/') return send(res, 200, homePage());
+    if (method === 'GET' && path === '/') return send(res, 200, await homePage());
 
     if (method === 'GET' && path === '/player/new') return send(res, 200, playerNewPage());
     if (method === 'POST' && path === '/player/new') {
