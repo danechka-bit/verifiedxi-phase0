@@ -1,10 +1,44 @@
 require('dotenv').config();
 const http = require('http');
 const url = require('url');
+const crypto = require('crypto');
 const querystring = require('querystring');
 const db = require('./db');
 const identity = require('./identity');
 const { layout, escapeHtml, statusBadge, initials } = require('./views');
+
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'staff';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+
+// Constant-time compare so a mistyped password can't be brute-forced faster
+// via response-time differences (crypto.timingSafeEqual needs equal-length
+// buffers, so pad first — the length check above still leaks length, which
+// is fine for a password with no fixed expected length).
+function safeEqual(a, b) {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+// No ADMIN_PASSWORD set means local dev without it configured yet — let it
+// through so `npm start` still works out of the box, but this must be set
+// before deploying anywhere real (see README).
+function checkAdminAuth(req) {
+  if (!ADMIN_PASSWORD) return true;
+  const header = req.headers.authorization || '';
+  const [scheme, encoded] = header.split(' ');
+  if (scheme !== 'Basic' || !encoded) return false;
+  const [user, pass] = Buffer.from(encoded, 'base64').toString('utf8').split(':');
+  return safeEqual(user || '', ADMIN_USERNAME) && safeEqual(pass || '', ADMIN_PASSWORD);
+}
+
+function requireAdminAuth(req, res) {
+  if (checkAdminAuth(req)) return true;
+  res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="VerifiedXI Admin"', 'Content-Type': 'text/plain' });
+  res.end('Authentication required.');
+  return false;
+}
 
 const PLAYER_ICON = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-6 8-6s8 2 8 6"/></svg>';
 const SCOUT_ICON = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
@@ -282,6 +316,10 @@ const server = http.createServer(async (req, res) => {
   const method = req.method;
 
   try {
+    if (path === '/admin' || path.startsWith('/admin/')) {
+      if (!requireAdminAuth(req, res)) return;
+    }
+
     if (method === 'GET' && path === '/') return send(res, 200, await homePage());
 
     if (method === 'GET' && path === '/player/new') return send(res, 200, playerNewPage());

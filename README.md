@@ -22,6 +22,14 @@ Without `STRIPE_SECRET_KEY` set, the guardian card just shows the old "waiting o
 
 The admin queue's guardian Approve/Reject buttons still work as a manual override either way (e.g. if a session gets stuck in `requires_input`).
 
+## Admin login
+
+`/admin` is protected with HTTP Basic Auth. Set `ADMIN_USERNAME` (defaults to `staff`) and `ADMIN_PASSWORD` in `.env` — your browser will prompt for them the first time you visit `/admin`.
+
+**Without `ADMIN_PASSWORD` set, `/admin` is wide open to anyone who finds the URL** — that's only acceptable for local development. Set a real password before deploying this anywhere reachable by the public.
+
+This is one piece of a larger gap: right now players, guardians, and scouts have no login of their own either — their pages are just numeric URLs (`/player/1`, `/scout/1`) with no ownership check. That's a bigger follow-up (real accounts, not just an admin password) needed before this handles real people's data.
+
 ## Why lff.lv isn't automated
 
 Investigated scraping lff.lv to auto-verify season stats instead of the manual admin check. Findings: the site's league/standings pages are plain server-rendered HTML with no login wall or CAPTCHA, so *scraping itself* is technically easy. But there's no individual player profile page or stable player ID anywhere on the public site — a player's full season line (apps/goals/assists/minutes) would have to be reconstructed by crawling every match report for their club and summing events by name, with no way to disambiguate two players sharing a name. That's fragile and exactly wrong for a product whose premise is verified accuracy. LFF runs a real competition system (COMET, at comet.lff.lv) with a club-facing portal — asking LFF directly about data access is a better path to automation than scraping, if that's worth pursuing later.
