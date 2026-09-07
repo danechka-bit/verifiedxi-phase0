@@ -1,0 +1,12 @@
+{
+  "name": "verifiedxi-phase0",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": { "start": "node server.js" },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "pg": "^8.13.1",
+    "stripe": "^17.4.0"
+  }
+}

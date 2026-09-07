@@ -1,0 +1,92 @@
+{
+  "players": [
+    {
+      "id": 2,
+      "full_name": "Toms Ozoliņš",
+      "position": "FW",
+      "club": "BFC Daugava U17",
+      "birth_year": 2009,
+      "guardian_id": 1,
+      "profile_status": "active",
+      "created_at": "2026-09-06T17:55:58.112Z"
+    },
+    {
+      "id": 4,
+      "full_name": "Toms Ozoliņš",
+      "position": "FW",
+      "club": "BFC Daugava U17",
+      "birth_year": 2009,
+      "guardian_id": 3,
+      "profile_status": "active",
+      "created_at": "2026-09-06T17:56:22.027Z"
+    },
+    {
+      "id": 6,
+      "full_name": "Toms Ozoliņš",
+      "position": "FW",
+      "club": "BFC Daugava U17",
+      "birth_year": 2009,
+      "guardian_id": 5,
+      "profile_status": "active",
+      "created_at": "2026-09-06T17:56:29.577Z"
+    }
+  ],
+  "guardians": [
+    {
+      "id": 1,
+      "name": "Ligita Ozoliņa",
+      "email": "ligita.ozolina@example.com",
+      "id_verification_status": "approved",
+      "created_at": "2026-09-06T17:55:58.111Z",
+      "verified_at": "2026-09-06T17:56:10.519Z"
+    },
+    {
+      "id": 3,
+      "name": "Ligita Ozoliņa",
+      "email": "ligita.ozolina@example.com",
+      "id_verification_status": "approved",
+      "created_at": "2026-09-06T17:56:22.027Z",
+      "verified_at": "2026-09-06T17:56:25.419Z"
+    },
+    {
+      "id": 5,
+      "name": "Ligita Ozoliņa",
+      "email": "ligita.ozolina@example.com",
+      "id_verification_status": "approved",
+      "created_at": "2026-09-06T17:56:29.577Z",
+      "verified_at": "2026-09-06T17:56:33.911Z"
+    }
+  ],
+  "seasons": [
+    {
+      "id": 7,
+      "player_id": 2,
+      "club": "BFC Daugava U17",
+      "season_label": "2025/26",
+      "source_url": "lff.lv/spelotajs/toms-ozolins-2009",
+      "apps": 14,
+      "goals": 9,
+      "assists": 5,
+      "minutes": 1120,
+      "verification_status": "verified",
+      "verification_method": "manual",
+      "verified_at": "2026-09-06T18:01:48.598Z",
+      "verified_by": "staff",
+      "created_at": "2026-09-06T18:01:23.741Z"
+    }
+  ],
+  "scouts": [
+    {
+      "id": 8,
+      "name": "Jānis Vītols",
+      "organization": "Riga Youth Development Academy",
+      "role": "Scout",
+      "public_profile_url": "linkedin.com/in/janis-vitols-scouting",
+      "verification_status": "verified",
+      "ai_confidence_score": null,
+      "reviewed_by": "staff",
+      "created_at": "2026-09-06T18:01:57.431Z"
+    }
+  ],
+  "nextId": 9
+}
