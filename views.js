@@ -2,6 +2,8 @@
 // Visual language (colors, type, cards, badges) ported from the design
 // mockups (verifiedxi-mockup*.html) into this real, multi-page site.
 
+const { t, LANGUAGES } = require('./i18n');
+
 function escapeHtml(str) {
   return String(str ?? '').replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -12,12 +14,16 @@ const CHECK_ICON = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" 
 const CLOCK_ICON = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>';
 const CROSS_ICON = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 
-function layout(title, bodyHtml, session) {
+function layout(title, bodyHtml, session, lang) {
+  lang = lang || 'en';
   const accountNav = session
-    ? `<a href="/${session.type}/${session.record.id}">My ${session.type === 'player' ? 'profile' : 'account'}</a><a href="/logout">Log out</a>`
-    : `<a href="/login">Log in</a>`;
+    ? `<a href="/${session.type}/${session.record.id}">${t(lang, session.type === 'player' ? 'nav.my_profile' : 'nav.my_account')}</a><a href="/logout">${t(lang, 'nav.logout')}</a>`
+    : `<a href="/login">${t(lang, 'nav.login')}</a>`;
+  const langSwitcher = Object.keys(LANGUAGES).map(code =>
+    `<a href="/lang/${code}" class="lang-link${code === lang ? ' active' : ''}">${code.toUpperCase()}</a>`
+  ).join('');
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${lang}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -53,6 +59,13 @@ body{margin:0;font-family:'Inter',-apple-system,Arial,sans-serif;background:var(
   padding:8px 12px;border-radius:20px;opacity:0.75;transition:opacity 0.15s,background 0.15s;
 }
 .topbar a:hover{opacity:1;background:rgba(245,242,233,0.08);}
+.lang-switch{display:flex;gap:2px;margin-left:6px;padding-left:10px;border-left:1px solid rgba(245,242,233,0.3);}
+.lang-switch .lang-link{
+  padding:6px 9px;font-size:11px;font-family:'IBM Plex Mono',monospace;letter-spacing:0.3px;
+  opacity:0.55;border-radius:14px;
+}
+.lang-switch .lang-link.active{opacity:1;background:rgba(200,155,60,0.25);color:var(--gold-soft);}
+.lang-switch .lang-link:hover{opacity:1;}
 
 .wrap{max-width:640px;margin:0 auto;padding:40px 20px 90px;}
 
@@ -163,11 +176,12 @@ code{background:var(--paper);padding:2px 6px;border-radius:4px;font-size:12px;fo
     <div class="word">VERIFIEDXI</div>
     <div class="tag">Phase 1</div>
     <nav>
-      <a href="/player/new">Player signup</a>
-      <a href="/scout/new">Scout signup</a>
-      <a href="/scouts">Search players</a>
-      <a href="/admin">Admin</a>
+      <a href="/player/new">${t(lang, 'nav.player_signup')}</a>
+      <a href="/scout/new">${t(lang, 'nav.scout_signup')}</a>
+      <a href="/scouts">${t(lang, 'nav.search')}</a>
+      <a href="/admin">${t(lang, 'nav.admin')}</a>
       ${accountNav}
+      <span class="lang-switch">${langSwitcher}</span>
     </nav>
   </div>
   <div class="wrap">${bodyHtml}</div>
@@ -175,14 +189,16 @@ code{background:var(--paper);padding:2px 6px;border-radius:4px;font-size:12px;fo
 </html>`;
 }
 
-function statusBadge(status) {
+function statusBadge(status, lang) {
+  lang = lang || 'en';
   const map = {
-    active: ['ok', CHECK_ICON, 'ACTIVE'], verified: ['ok', CHECK_ICON, 'VERIFIED'], approved: ['ok', CHECK_ICON, 'APPROVED'],
-    frozen: ['wait', CLOCK_ICON, 'FROZEN'], submitted: ['wait', CLOCK_ICON, 'SUBMITTED'], pending: ['wait', CLOCK_ICON, 'PENDING'],
-    ai_reviewed: ['wait', CLOCK_ICON, 'AI REVIEWED'], matching: ['wait', CLOCK_ICON, 'MATCHING'],
-    rejected: ['no', CROSS_ICON, 'REJECTED'], unmatched: ['no', CROSS_ICON, 'UNMATCHED'], flagged_for_human: ['no', CROSS_ICON, 'FLAGGED']
+    active: ['ok', CHECK_ICON, 'badge.active'], verified: ['ok', CHECK_ICON, 'badge.verified'], approved: ['ok', CHECK_ICON, 'badge.approved'],
+    frozen: ['wait', CLOCK_ICON, 'badge.frozen'], submitted: ['wait', CLOCK_ICON, 'badge.submitted'], pending: ['wait', CLOCK_ICON, 'badge.pending'],
+    ai_reviewed: ['wait', CLOCK_ICON, 'badge.ai_reviewed'], matching: ['wait', CLOCK_ICON, 'badge.matching'],
+    rejected: ['no', CROSS_ICON, 'badge.rejected'], unmatched: ['no', CROSS_ICON, 'badge.unmatched'], flagged_for_human: ['no', CROSS_ICON, 'badge.flagged_for_human']
   };
-  const [cls, icon, label] = map[status] || ['wait', CLOCK_ICON, status.toUpperCase()];
+  const [cls, icon, key] = map[status] || ['wait', CLOCK_ICON, null];
+  const label = key ? t(lang, key) : status.toUpperCase();
   return `<span class="badge ${cls}">${icon}${label}</span>`;
 }
 

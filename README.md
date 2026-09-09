@@ -53,6 +53,12 @@ Players can set a bio and photo (pasted image URL — no upload service wired up
 
 **Uploaded video storage is local disk (`data/uploads/videos/`) — this will NOT survive most hosting platforms.** Render, Railway, Fly.io, etc. give containers an ephemeral filesystem by default: uploaded files vanish on every redeploy or restart unless you pay for a persistent volume, which most starter tiers don't include. Before deploying, swap `media.js`'s `saveUploadedFile`/`readUploadedFile` for a real object storage upload (S3, Cloudflare R2, Cloudinary) — same swap-point pattern as `identity.js`/`mailer.js`, nothing else needs to change since callers only care about the URL that comes back. Uploaded files are saved under a random filename (the client's filename is never trusted) and validated by extension/size before being written; the serving route (`GET /uploads/videos/:filename`) only matches that exact random-hex-plus-extension pattern, so path traversal isn't reachable through it.
 
+## Languages
+
+The full site is available in English, Latvian, and Russian — the `EN / LV / RU` switcher in the top-right of the nav sets a `vxi_lang` cookie (1-year expiry) and re-renders the current page in that language via `/lang/:code`; unset defaults to English. All user-facing copy (nav, forms, buttons, hints, status badges, error messages) lives in `i18n.js` as a flat `key -> string` dictionary per language with `{variable}` interpolation, looked up through `t(lang, key, vars)`. Position abbreviations (GK, CB, CDM, etc.) and internal data values (e.g. a scout's stored `role`) are intentionally *not* translated — they stay in their canonical English form regardless of UI language so the underlying data is consistent no matter which language someone signed up in; only the on-screen label changes.
+
+Adding a fourth language means adding one more object to `i18n.js`'s `STRINGS` and one line to `LANGUAGES` — no other file needs to change. Missing keys in a language silently fall back to English rather than showing a blank or a raw key.
+
 ## Why lff.lv isn't automated
 
 Investigated scraping lff.lv to auto-verify season stats instead of the manual admin check. Findings: the site's league/standings pages are plain server-rendered HTML with no login wall or CAPTCHA, so *scraping itself* is technically easy. But there's no individual player profile page or stable player ID anywhere on the public site — a player's full season line (apps/goals/assists/minutes) would have to be reconstructed by crawling every match report for their club and summing events by name, with no way to disambiguate two players sharing a name. That's fragile and exactly wrong for a product whose premise is verified accuracy. LFF runs a real competition system (COMET, at comet.lff.lv) with a club-facing portal — asking LFF directly about data access is a better path to automation than scraping, if that's worth pursuing later.
@@ -89,6 +95,7 @@ By default it connects to `postgres://localhost:5432/verifiedxi` with no user/pa
 - `identity.js` — Stripe Identity integration for guardian ID verification (see above)
 - `mailer.js` — magic-link email delivery via Resend, with the same configured/fallback pattern as `identity.js` (see above)
 - `media.js` — highlight video handling: YouTube/Vimeo link parsing and local-disk file uploads (see above — the storage swap-point before deploying)
+- `i18n.js` — English/Latvian/Russian string dictionary and the `t()` lookup helper (see "Languages" above)
 - `views.js` — shared HTML/CSS shell
 - `data/store.json` — leftover from the Phase 0 JSON-file version; no longer read or written, safe to delete once you've confirmed the Postgres version works for you
 

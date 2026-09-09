@@ -10,9 +10,17 @@ const identity = require('./identity');
 const mailer = require('./mailer');
 const media = require('./media');
 const { layout, escapeHtml, statusBadge, initials } = require('./views');
+const { t, resolveLang } = require('./i18n');
 
 const SESSION_COOKIE = 'vxi_session';
+const LANG_COOKIE = 'vxi_lang';
 const COOKIE_SECURE = /^https:/.test(process.env.APP_BASE_URL || '');
+
+// Current UI language for this request: the vxi_lang cookie (set by the
+// /lang/:code switcher), defaulting to English for a first-time visitor.
+function getLang(req) {
+  return resolveLang(parseCookies(req)[LANG_COOKIE]);
+}
 
 function parseCookies(req) {
   const header = req.headers.cookie || '';
@@ -85,14 +93,14 @@ const PORT = process.env.PORT || 3000;
 // Renders one highlight video as an embed (YouTube/Vimeo iframe, or a
 // native <video> for an uploaded file); a plain outbound link for anything
 // else (a pasted URL we didn't recognize as YouTube/Vimeo).
-function videoEmbedHtml(v) {
+function videoEmbedHtml(v, lang) {
   if (v.source === 'youtube' || v.source === 'vimeo') {
     return `<div class="video-embed"><iframe src="${escapeHtml(v.url)}" frameborder="0" allowfullscreen></iframe></div>`;
   }
   if (v.source === 'upload') {
     return `<div class="video-embed"><video controls src="${escapeHtml(v.url)}"></video></div>`;
   }
-  return `<p class="hint"><a href="${escapeHtml(v.url)}" target="_blank" rel="noopener">Watch video ↗</a></p>`;
+  return `<p class="hint"><a href="${escapeHtml(v.url)}" target="_blank" rel="noopener">${t(lang, 'highlights.watch_link')}</a></p>`;
 }
 
 function readBody(req) {
@@ -115,105 +123,105 @@ function redirect(res, path) {
 
 // ---------------- Pages ----------------
 
-async function homePage() {
+async function homePage(lang) {
   const s = await db.stats();
   return layout('Home', `
-    <div class="eyebrow">Welcome</div>
-    <h1>Get your stats seen —<br>and believed.</h1>
-    <p class="sub">Real guardian ID verification, real data persistence. Stat matching against lff.lv is done by a human in the admin queue — not automated, and that's intentional (see the README).</p>
+    <div class="eyebrow">${t(lang, 'home.eyebrow')}</div>
+    <h1>${t(lang, 'home.title')}</h1>
+    <p class="sub">${t(lang, 'home.sub')}</p>
 
     <div class="ticker">
-      <div class="tstat"><div class="tnum">${s.verified_players}</div><div class="tlbl">Verified players</div></div>
+      <div class="tstat"><div class="tnum">${s.verified_players}</div><div class="tlbl">${t(lang, 'home.ticker_verified_players')}</div></div>
       <div class="tdiv"></div>
-      <div class="tstat"><div class="tnum">${s.verified_scouts}</div><div class="tlbl">Scouts active</div></div>
+      <div class="tstat"><div class="tnum">${s.verified_scouts}</div><div class="tlbl">${t(lang, 'home.ticker_scouts_active')}</div></div>
       <div class="tdiv"></div>
-      <div class="tstat"><div class="tnum">${s.pending_reviews}</div><div class="tlbl">In review</div></div>
+      <div class="tstat"><div class="tnum">${s.pending_reviews}</div><div class="tlbl">${t(lang, 'home.ticker_in_review')}</div></div>
     </div>
 
     <a class="tap-card" href="/player/new">
       <div class="icon">${PLAYER_ICON}</div>
       <div>
-        <div class="title">I'm a player</div>
-        <div class="desc">Build a verified profile from your club stats</div>
+        <div class="title">${t(lang, 'home.player_title')}</div>
+        <div class="desc">${t(lang, 'home.player_desc')}</div>
       </div>
       <div class="chev">›</div>
     </a>
     <a class="tap-card" href="/scout/new">
       <div class="icon">${SCOUT_ICON}</div>
       <div>
-        <div class="title">I'm a scout</div>
-        <div class="desc">Find players with confirmed performance data</div>
+        <div class="title">${t(lang, 'home.scout_title')}</div>
+        <div class="desc">${t(lang, 'home.scout_desc')}</div>
       </div>
       <div class="chev">›</div>
     </a>
     <a class="tap-card" href="/admin">
       <div class="icon">${STAFF_ICON}</div>
       <div>
-        <div class="title">I'm staff</div>
-        <div class="desc">Approve guardians, verify seasons, approve scouts</div>
+        <div class="title">${t(lang, 'home.staff_title')}</div>
+        <div class="desc">${t(lang, 'home.staff_desc')}</div>
       </div>
       <div class="chev">›</div>
     </a>
-  `);
+  `, null, lang);
 }
 
-function playerNewPage() {
-  return layout('New player', `
-    <div class="eyebrow">Player signup</div>
-    <h1>Set up your profile</h1>
-    <p class="sub">This is what scouts will see first. If the player is under 18, a guardian must be verified before the profile goes live.</p>
+function playerNewPage(lang) {
+  return layout(t(lang, 'player_new.title_tag'), `
+    <div class="eyebrow">${t(lang, 'player_new.eyebrow')}</div>
+    <h1>${t(lang, 'player_new.title')}</h1>
+    <p class="sub">${t(lang, 'player_new.sub')}</p>
     <form method="POST" action="/player/new">
-      <label>Your email</label><input type="email" name="email" required placeholder="you@example.com">
-      <p class="hint">Used to log back in and manage this profile — no password needed, we email a sign-in link.</p>
-      <label>Full name</label><input name="full_name" required placeholder="Full name">
-      <label>Position</label>
+      <label>${t(lang, 'player_new.email_label')}</label><input type="email" name="email" required placeholder="you@example.com">
+      <p class="hint">${t(lang, 'player_new.email_hint')}</p>
+      <label>${t(lang, 'player_new.full_name_label')}</label><input name="full_name" required placeholder="${t(lang, 'player_new.full_name_placeholder')}">
+      <label>${t(lang, 'player_new.position_label')}</label>
       <select name="position" required>
-        <option value="" disabled selected>Choose a position</option>
-        <optgroup label="Goalkeeper">
+        <option value="" disabled selected>${t(lang, 'player_new.position_placeholder')}</option>
+        <optgroup label="${t(lang, 'position_group.gk')}">
           <option>GK</option>
         </optgroup>
-        <optgroup label="Defenders">
+        <optgroup label="${t(lang, 'position_group.def')}">
           <option>LB</option>
           <option>CB</option>
           <option>RB</option>
         </optgroup>
-        <optgroup label="Midfielders">
+        <optgroup label="${t(lang, 'position_group.mid')}">
           <option>CDM</option>
           <option>CM</option>
           <option>LM</option>
           <option>RM</option>
           <option>CAM</option>
         </optgroup>
-        <optgroup label="Attackers">
+        <optgroup label="${t(lang, 'position_group.att')}">
           <option>ST</option>
           <option>RW</option>
           <option>LW</option>
         </optgroup>
       </select>
-      <label>Club</label><input name="club" required placeholder="Club">
-      <label>Birth year</label><input name="birth_year" required placeholder="e.g. 2009">
-      <div class="section-title">Guardian (required if under 18)</div>
-      <label>Guardian name</label><input name="guardian_name" placeholder="Guardian name">
-      <label>Guardian email</label><input name="guardian_email" placeholder="guardian@example.com">
+      <label>${t(lang, 'player_new.club_label')}</label><input name="club" required placeholder="${t(lang, 'player_new.club_placeholder')}">
+      <label>${t(lang, 'player_new.birth_year_label')}</label><input name="birth_year" required placeholder="${t(lang, 'player_new.birth_year_placeholder')}">
+      <div class="section-title">${t(lang, 'player_new.guardian_section')}</div>
+      <label>${t(lang, 'player_new.guardian_name_label')}</label><input name="guardian_name" placeholder="${t(lang, 'player_new.guardian_name_placeholder')}">
+      <label>${t(lang, 'player_new.guardian_email_label')}</label><input name="guardian_email" placeholder="${t(lang, 'player_new.guardian_email_placeholder')}">
       <p class="hint">${identity.isConfigured()
-        ? 'After creating the profile, the guardian completes a real ID check through Stripe Identity.'
-        : 'Stripe Identity isn\'t configured on this server, so a staff member will approve this guardian manually from the admin queue.'}</p>
-      <button type="submit">Create profile</button>
+        ? t(lang, 'player_new.stripe_hint_configured')
+        : t(lang, 'player_new.stripe_hint_unconfigured')}</p>
+      <button type="submit">${t(lang, 'player_new.submit')}</button>
     </form>
-  `);
+  `, null, lang);
 }
 
-function playerStatusPage(player, guardian, seasons, videos, session) {
+function playerStatusPage(player, guardian, seasons, videos, session, lang) {
   const canAddSeason = player.profile_status === 'active';
-  return layout('Player profile', `
-    <div class="eyebrow">Player profile</div>
+  return layout(t(lang, 'player_status.title_tag'), `
+    <div class="eyebrow">${t(lang, 'player_status.eyebrow')}</div>
     <div class="profile-head">
       ${player.photo_url
         ? `<img class="avatar-photo" src="${escapeHtml(player.photo_url)}" alt="">`
         : `<div class="avatar">${escapeHtml(initials(player.full_name))}</div>`}
       <div>
-        <div class="name">${escapeHtml(player.full_name.toUpperCase())} ${statusBadge(player.profile_status)}</div>
-        <div class="meta">${escapeHtml(player.position)} · ${escapeHtml(player.club)} · born ${player.birth_year}</div>
+        <div class="name">${escapeHtml(player.full_name.toUpperCase())} ${statusBadge(player.profile_status, lang)}</div>
+        <div class="meta">${escapeHtml(player.position)} · ${escapeHtml(player.club)} · ${t(lang, 'player_status.born', { year: player.birth_year })}</div>
       </div>
     </div>
 
@@ -221,160 +229,163 @@ function playerStatusPage(player, guardian, seasons, videos, session) {
 
     ${guardian ? `
       <div class="card">
-        <div class="row"><b>Guardian: ${escapeHtml(guardian.name)}</b> ${statusBadge(guardian.id_verification_status)}</div>
+        <div class="row"><b>${t(lang, 'player_status.guardian_prefix', { name: escapeHtml(guardian.name) })}</b> ${statusBadge(guardian.id_verification_status, lang)}</div>
         ${guardian.id_verification_status === 'approved' ? '' : identity.isConfigured() ? `
-          <p class="hint">Profile is frozen — invisible to scouts, no season submissions — until this guardian's ID is verified. No timeout.</p>
-          <a class="btn" href="/guardian/${guardian.id}/verify">Start ID verification</a>
-        ` : `<p class="hint">Profile is frozen — invisible to scouts, no season submissions — until this guardian's ID is approved in the admin queue. No timeout.</p>`}
+          <p class="hint">${t(lang, 'player_status.guardian_frozen_configured')}</p>
+          <a class="btn" href="/guardian/${guardian.id}/verify">${t(lang, 'player_status.start_verification')}</a>
+        ` : `<p class="hint">${t(lang, 'player_status.guardian_frozen_unconfigured')}</p>`}
       </div>
     ` : ''}
 
     ${seasons.map(s => `
       <div class="card">
-        <div class="row"><b>${escapeHtml(s.season_label)} · ${escapeHtml(s.club)}</b> ${statusBadge(s.verification_status)}</div>
+        <div class="row"><b>${escapeHtml(s.season_label)} · ${escapeHtml(s.club)}</b> ${statusBadge(s.verification_status, lang)}</div>
         <div class="stat-grid">
-          <div class="stat-box"><b>${s.apps}</b><span>Apps</span></div>
-          <div class="stat-box"><b>${s.goals}</b><span>Goals</span></div>
-          <div class="stat-box"><b>${s.assists}</b><span>Assists</span></div>
-          <div class="stat-box"><b>${s.minutes}</b><span>Mins</span></div>
+          <div class="stat-box"><b>${s.apps}</b><span>${t(lang, 'stat.apps')}</span></div>
+          <div class="stat-box"><b>${s.goals}</b><span>${t(lang, 'stat.goals')}</span></div>
+          <div class="stat-box"><b>${s.assists}</b><span>${t(lang, 'stat.assists')}</span></div>
+          <div class="stat-box"><b>${s.minutes}</b><span>${t(lang, 'stat.mins')}</span></div>
         </div>
-        <p class="hint">Source: ${escapeHtml(s.source_url)}${s.verified_by ? ` · verified by ${escapeHtml(s.verified_by)} (manual)` : ''}</p>
+        <p class="hint">${t(lang, 'player_status.season_source', { url: escapeHtml(s.source_url) })}${s.verified_by ? t(lang, 'player_status.verified_by_manual', { who: escapeHtml(s.verified_by) }) : ''}</p>
       </div>
     `).join('')}
 
     ${canAddSeason ? `
-      <div class="section-title">Add a season</div>
+      <div class="section-title">${t(lang, 'add_season.title')}</div>
       <form method="POST" action="/player/${player.id}/season">
-        <label>lff.lv link</label><input name="source_url" required value="lff.lv/spelotajs/toms-ozolins-2009">
-        <label>Club</label><input name="club" required value="${escapeHtml(player.club)}">
-        <label>Season label</label><input name="season_label" required value="2025/26">
+        <label>${t(lang, 'add_season.link_label')}</label><input name="source_url" required placeholder="${t(lang, 'add_season.link_placeholder')}">
+        <label>${t(lang, 'add_season.club_label')}</label><input name="club" required value="${escapeHtml(player.club)}">
+        <label>${t(lang, 'add_season.season_label_label')}</label><input name="season_label" required placeholder="${t(lang, 'add_season.season_label_placeholder')}">
         <div class="stat-grid" style="margin-top:14px;">
-          <div><label>Apps</label><input name="apps" value="14"></div>
-          <div><label>Goals</label><input name="goals" value="9"></div>
-          <div><label>Assists</label><input name="assists" value="5"></div>
-          <div><label>Minutes</label><input name="minutes" value="1120"></div>
+          <div><label>${t(lang, 'stat.apps')}</label><input name="apps" placeholder="0"></div>
+          <div><label>${t(lang, 'stat.goals')}</label><input name="goals" placeholder="0"></div>
+          <div><label>${t(lang, 'stat.assists')}</label><input name="assists" placeholder="0"></div>
+          <div><label>${t(lang, 'stat.mins')}</label><input name="minutes" placeholder="0"></div>
         </div>
-        <p class="hint">This goes to the admin queue for a human to check against the live lff.lv page — nothing is auto-verified in Phase 0.</p>
-        <button type="submit">Submit for verification</button>
+        <p class="hint">${t(lang, 'add_season.hint')}</p>
+        <button type="submit">${t(lang, 'add_season.submit')}</button>
       </form>
-    ` : `<p class="hint">Season submission unlocks once the guardian is approved.</p>`}
+    ` : `<p class="hint">${t(lang, 'add_season.locked_hint')}</p>`}
 
-    <div class="section-title">Highlights</div>
-    ${videos.length === 0 ? `<p class="hint">No highlight videos yet.</p>` : videos.map(v => `
+    <div class="section-title">${t(lang, 'highlights.title')}</div>
+    ${videos.length === 0 ? `<p class="hint">${t(lang, 'highlights.none')}</p>` : videos.map(v => `
       <div class="card">
         ${v.title ? `<b>${escapeHtml(v.title)}</b>` : ''}
-        ${videoEmbedHtml(v)}
+        ${videoEmbedHtml(v, lang)}
       </div>
     `).join('')}
     <form method="POST" action="/player/${player.id}/video" enctype="multipart/form-data">
-      <label>YouTube or Vimeo link</label><input type="url" name="video_url" placeholder="https://youtube.com/watch?v=...">
-      <label>Or upload a video file</label><input type="file" name="video_file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v">
-      <label>Title (optional)</label><input name="title" placeholder="e.g. Hat-trick vs Skonto U17">
-      <p class="hint">Provide a link OR a file, not both. Uploads: mp4/mov/webm/m4v, up to 150MB.</p>
-      <button type="submit">Add highlight</button>
+      <label>${t(lang, 'highlights.link_label')}</label><input type="url" name="video_url" placeholder="https://youtube.com/watch?v=...">
+      <label>${t(lang, 'highlights.upload_label')}</label><input type="file" name="video_file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v">
+      <label>${t(lang, 'highlights.video_title_label')}</label><input name="title" placeholder="${t(lang, 'highlights.video_title_placeholder')}">
+      <p class="hint">${t(lang, 'highlights.hint')}</p>
+      <button type="submit">${t(lang, 'highlights.submit')}</button>
     </form>
 
-    <div class="section-title">Edit profile</div>
+    <div class="section-title">${t(lang, 'edit_profile.title')}</div>
     <form method="POST" action="/player/${player.id}/profile">
-      <label>Bio</label>
-      <textarea name="bio" rows="4" placeholder="Tell scouts about your playing style, achievements, availability...">${escapeHtml(player.bio || '')}</textarea>
-      <label>Photo URL</label><input type="url" name="photo_url" value="${escapeHtml(player.photo_url || '')}" placeholder="https://...">
-      <button type="submit" class="secondary">Save profile</button>
+      <label>${t(lang, 'edit_profile.bio_label')}</label>
+      <textarea name="bio" rows="4" placeholder="${t(lang, 'edit_profile.bio_placeholder_player')}">${escapeHtml(player.bio || '')}</textarea>
+      <label>${t(lang, 'edit_profile.photo_url_label')}</label><input type="url" name="photo_url" value="${escapeHtml(player.photo_url || '')}" placeholder="${t(lang, 'edit_profile.photo_url_placeholder')}">
+      <button type="submit" class="secondary">${t(lang, 'edit_profile.submit')}</button>
     </form>
-  `, session);
+  `, session, lang);
 }
 
-function scoutNewPage() {
-  return layout('New scout', `
-    <div class="eyebrow">Before you search</div>
-    <h1>Verify your organization</h1>
-    <p class="sub">Every scout account is reviewed before search access is granted.</p>
+function scoutNewPage(lang) {
+  return layout(t(lang, 'scout_new.title_tag'), `
+    <div class="eyebrow">${t(lang, 'scout_new.eyebrow')}</div>
+    <h1>${t(lang, 'scout_new.title')}</h1>
+    <p class="sub">${t(lang, 'scout_new.sub')}</p>
     <form method="POST" action="/scout/new">
-      <label>Your email</label><input type="email" name="email" required placeholder="you@example.com">
-      <p class="hint">Used to log back in and search — no password needed, we email a sign-in link.</p>
-      <label>Your name</label><input name="name" required value="Jānis Vītols">
-      <label>Organization / academy</label><input name="organization" required value="Riga Youth Development Academy">
-      <label>Role</label>
-      <select name="role"><option selected>Scout</option><option>Academy director</option><option>Agent</option></select>
-      <label>Public profile link</label><input name="public_profile_url" value="linkedin.com/in/janis-vitols-scouting">
-      <button type="submit">Submit for verification</button>
+      <label>${t(lang, 'scout_new.email_label')}</label><input type="email" name="email" required placeholder="you@example.com">
+      <p class="hint">${t(lang, 'scout_new.email_hint')}</p>
+      <label>${t(lang, 'scout_new.name_label')}</label><input name="name" required placeholder="${t(lang, 'scout_new.name_placeholder')}">
+      <label>${t(lang, 'scout_new.org_label')}</label><input name="organization" required placeholder="${t(lang, 'scout_new.org_placeholder')}">
+      <label>${t(lang, 'scout_new.role_label')}</label>
+      <select name="role" required>
+        <option value="" disabled selected>${t(lang, 'scout_new.role_placeholder')}</option>
+        <option value="Scout">${t(lang, 'role.scout')}</option>
+        <option value="Academy director">${t(lang, 'role.academy_director')}</option>
+        <option value="Agent">${t(lang, 'role.agent')}</option>
+      </select>
+      <label>${t(lang, 'scout_new.profile_link_label')}</label><input name="public_profile_url" placeholder="${t(lang, 'scout_new.profile_link_placeholder')}">
+      <button type="submit">${t(lang, 'scout_new.submit')}</button>
     </form>
-  `);
+  `, null, lang);
 }
 
-function scoutStatusPage(scout, session) {
-  return layout('Scout status', `
-    <div class="eyebrow">Scout status</div>
+function scoutStatusPage(scout, session, lang) {
+  return layout(t(lang, 'scout_status.title_tag'), `
+    <div class="eyebrow">${t(lang, 'scout_status.eyebrow')}</div>
     <div class="profile-head">
       ${scout.photo_url
         ? `<img class="avatar-photo" src="${escapeHtml(scout.photo_url)}" alt="">`
         : `<div class="avatar">${escapeHtml(initials(scout.name))}</div>`}
       <div>
-        <div class="name">${escapeHtml(scout.name.toUpperCase())} ${statusBadge(scout.verification_status)}</div>
+        <div class="name">${escapeHtml(scout.name.toUpperCase())} ${statusBadge(scout.verification_status, lang)}</div>
         <div class="meta">${escapeHtml(scout.organization)} · ${escapeHtml(scout.role)}</div>
       </div>
     </div>
     ${scout.bio ? `<p class="sub">${escapeHtml(scout.bio)}</p>` : ''}
-    ${scout.looking_for ? `<div class="card"><b>Looking for</b><p class="hint">${escapeHtml(scout.looking_for)}</p></div>` : ''}
+    ${scout.looking_for ? `<div class="card"><b>${t(lang, 'scout_status.looking_for_title')}</b><p class="hint">${escapeHtml(scout.looking_for)}</p></div>` : ''}
     ${scout.verification_status === 'verified'
-      ? `<a class="btn" href="/scouts">Search verified players</a>`
-      : `<p class="hint">Waiting on admin review. This queues on the Admin page.</p>`}
+      ? `<a class="btn" href="/scouts">${t(lang, 'scout_status.search_btn')}</a>`
+      : `<p class="hint">${t(lang, 'scout_status.waiting_review')}</p>`}
 
-    <div class="section-title">Edit profile</div>
+    <div class="section-title">${t(lang, 'edit_profile.title')}</div>
     <form method="POST" action="/scout/${scout.id}/profile">
-      <label>Bio</label>
-      <textarea name="bio" rows="4" placeholder="A bit about you and your organization...">${escapeHtml(scout.bio || '')}</textarea>
-      <label>Photo URL</label><input type="url" name="photo_url" value="${escapeHtml(scout.photo_url || '')}" placeholder="https://...">
-      <label>Who are you looking for?</label>
-      <textarea name="looking_for" rows="3" placeholder="e.g. Forwards, born 2008-2010, based in Riga region, 8+ goals this season">${escapeHtml(scout.looking_for || '')}</textarea>
-      <button type="submit" class="secondary">Save profile</button>
+      <label>${t(lang, 'edit_profile.bio_label')}</label>
+      <textarea name="bio" rows="4" placeholder="${t(lang, 'edit_profile.bio_placeholder_scout')}">${escapeHtml(scout.bio || '')}</textarea>
+      <label>${t(lang, 'edit_profile.photo_url_label')}</label><input type="url" name="photo_url" value="${escapeHtml(scout.photo_url || '')}" placeholder="${t(lang, 'edit_profile.photo_url_placeholder')}">
+      <label>${t(lang, 'edit_profile.looking_for_label')}</label>
+      <textarea name="looking_for" rows="3" placeholder="${t(lang, 'edit_profile.looking_for_placeholder')}">${escapeHtml(scout.looking_for || '')}</textarea>
+      <button type="submit" class="secondary">${t(lang, 'edit_profile.submit')}</button>
     </form>
-  `, session);
+  `, session, lang);
 }
 
-function loginPage(error) {
-  return layout('Log in', `
-    <div class="eyebrow">Sign in</div>
-    <h1>Log in</h1>
-    <p class="sub">Enter the email you used to sign up as a player or a scout — we'll send a one-time link, no password needed.</p>
+function loginPage(error, lang) {
+  return layout(t(lang, 'login.title_tag'), `
+    <div class="eyebrow">${t(lang, 'login.eyebrow')}</div>
+    <h1>${t(lang, 'login.title')}</h1>
+    <p class="sub">${t(lang, 'login.sub')}</p>
     ${error ? `<p class="hint" style="color:#A5352A;">${escapeHtml(error)}</p>` : ''}
     <form method="POST" action="/login">
-      <label>Email</label><input type="email" name="email" required placeholder="you@example.com">
-      <button type="submit">Send sign-in link</button>
+      <label>${t(lang, 'login.email_label')}</label><input type="email" name="email" required placeholder="you@example.com">
+      <button type="submit">${t(lang, 'login.submit')}</button>
     </form>
-  `);
+  `, null, lang);
 }
 
-function loginSentPage(email, devLink) {
-  return layout('Check your email', `
-    <div class="eyebrow">Almost there</div>
-    <h1>Check your email</h1>
-    <p class="sub">If ${escapeHtml(email)} has an account, a sign-in link is on its way. The link expires in 15 minutes.</p>
+function loginSentPage(email, devLink, lang) {
+  return layout(t(lang, 'login_sent.title_tag'), `
+    <div class="eyebrow">${t(lang, 'login_sent.eyebrow')}</div>
+    <h1>${t(lang, 'login_sent.title')}</h1>
+    <p class="sub">${t(lang, 'login_sent.sub', { email: escapeHtml(email) })}</p>
     ${devLink ? `
       <div class="card">
-        <b>No email service is configured on this server yet</b>
-        <p class="hint">So here's the link directly, for local testing:</p>
-        <a class="btn" href="${devLink}">Sign in as ${escapeHtml(email)}</a>
+        <b>${t(lang, 'login_sent.dev_notice')}</b>
+        <p class="hint">${t(lang, 'login_sent.dev_hint')}</p>
+        <a class="btn" href="${devLink}">${t(lang, 'login_sent.dev_link', { email: escapeHtml(email) })}</a>
       </div>
     ` : ''}
-  `);
+  `, null, lang);
 }
 
-function searchPage(scout, players, session) {
+function searchPage(scout, players, session, lang) {
   if (!scout || scout.verification_status !== 'verified') {
-    return layout('Search', `
-      <div class="eyebrow">Scout search</div>
-      <h1>Search players</h1>
-      <p class="sub">${session
-        ? `You need a verified scout account to search. Check your status, or <a href="/scout/new">sign up</a> if you haven't.`
-        : `You need a verified scout account to search. <a href="/login">Log in</a> or <a href="/scout/new">sign up</a> if you haven't.`}</p>
-    `, session);
+    return layout(t(lang, 'search.title_tag'), `
+      <div class="eyebrow">${t(lang, 'search.eyebrow')}</div>
+      <h1>${t(lang, 'search.title')}</h1>
+      <p class="sub">${t(lang, session ? 'search.need_verified_in' : 'search.need_verified_out')}</p>
+    `, session, lang);
   }
-  return layout('Search players', `
-    <div class="eyebrow">Verified · ${escapeHtml(scout.organization)}</div>
-    <h1>Find players</h1>
-    <p class="sub">Signed in as ${escapeHtml(scout.name)}</p>
-    ${players.length === 0 ? `<p class="hint">No verified players yet — verify a season from the admin queue to see one here.</p>` : ''}
+  return layout(t(lang, 'search.results_title_tag'), `
+    <div class="eyebrow">${t(lang, 'search.results_eyebrow', { org: escapeHtml(scout.organization) })}</div>
+    <h1>${t(lang, 'search.results_title')}</h1>
+    <p class="sub">${t(lang, 'search.signed_in_as', { name: escapeHtml(scout.name) })}</p>
+    ${players.length === 0 ? `<p class="hint">${t(lang, 'search.no_players')}</p>` : ''}
     ${players.map(p => `
       <div class="card">
         <div class="player-row" style="border:none;background:transparent;padding:0;margin-bottom:14px;">
@@ -383,71 +394,71 @@ function searchPage(scout, players, session) {
             : `<div class="avatar">${escapeHtml(initials(p.full_name))}</div>`}
           <div>
             <div class="rname">${escapeHtml(p.full_name)}</div>
-            <div class="rmeta">${escapeHtml(p.position)} · ${escapeHtml(p.club)} · born ${p.birth_year}</div>
+            <div class="rmeta">${escapeHtml(p.position)} · ${escapeHtml(p.club)} · ${t(lang, 'player_status.born', { year: p.birth_year })}</div>
           </div>
-          <div style="margin-left:auto;">${statusBadge('active')}</div>
+          <div style="margin-left:auto;">${statusBadge('active', lang)}</div>
         </div>
         ${p.bio ? `<p class="hint">${escapeHtml(p.bio)}</p>` : ''}
         ${p.seasons.map(s => `
           <div class="stat-grid">
-            <div class="stat-box"><b>${s.apps}</b><span>Apps</span></div>
-            <div class="stat-box"><b>${s.goals}</b><span>Goals</span></div>
-            <div class="stat-box"><b>${s.assists}</b><span>Assists</span></div>
-            <div class="stat-box"><b>${s.minutes}</b><span>Mins</span></div>
+            <div class="stat-box"><b>${s.apps}</b><span>${t(lang, 'stat.apps')}</span></div>
+            <div class="stat-box"><b>${s.goals}</b><span>${t(lang, 'stat.goals')}</span></div>
+            <div class="stat-box"><b>${s.assists}</b><span>${t(lang, 'stat.assists')}</span></div>
+            <div class="stat-box"><b>${s.minutes}</b><span>${t(lang, 'stat.mins')}</span></div>
           </div>
         `).join('')}
-        ${p.videos && p.videos.length > 0 ? p.videos.map(v => videoEmbedHtml(v)).join('') : ''}
-        <p class="hint">Contact goes to the club, never the player directly.</p>
+        ${p.videos && p.videos.length > 0 ? p.videos.map(v => videoEmbedHtml(v, lang)).join('') : ''}
+        <p class="hint">${t(lang, 'search.contact_hint')}</p>
       </div>
     `).join('')}
-  `, session);
+  `, session, lang);
 }
 
-async function adminPage() {
+async function adminPage(lang) {
   const guardians = await db.pendingGuardians();
   const seasons = await db.pendingSeasons();
   const scouts = await db.pendingScouts();
-  return layout('Admin queue', `
-    <div class="eyebrow">Play staff</div>
-    <h1>Review queue</h1>
+  return layout(t(lang, 'admin.title_tag'), `
+    <div class="eyebrow">${t(lang, 'admin.eyebrow')}</div>
+    <h1>${t(lang, 'admin.title')}</h1>
 
-    <div class="section-title">Guardians awaiting ID review (${guardians.length})</div>
-    ${guardians.length === 0 ? `<p class="hint">Nothing pending.</p>` : guardians.map(g => `
+    <div class="section-title">${t(lang, 'admin.guardians_section', { n: guardians.length })}</div>
+    ${guardians.length === 0 ? `<p class="hint">${t(lang, 'admin.nothing_pending')}</p>` : guardians.map(g => `
       <div class="card">
         <div class="row">
           <span><b>${escapeHtml(g.name)}</b> — ${escapeHtml(g.email)}</span>
           <span>
-            <form style="display:inline" method="POST" action="/admin/guardian/${g.id}/approve"><button type="submit">Approve</button></form>
-            <form style="display:inline" method="POST" action="/admin/guardian/${g.id}/reject"><button type="submit" class="secondary danger">Reject</button></form>
+            <form style="display:inline" method="POST" action="/admin/guardian/${g.id}/approve"><button type="submit">${t(lang, 'admin.approve')}</button></form>
+            <form style="display:inline" method="POST" action="/admin/guardian/${g.id}/reject"><button type="submit" class="secondary danger">${t(lang, 'admin.reject')}</button></form>
           </span>
         </div>
-        ${g.last_error ? `<p class="hint">Stripe Identity check failed and is awaiting retry: <code>${escapeHtml(g.last_error)}</code></p>` : ''}
+        ${g.last_error ? `<p class="hint">${t(lang, 'admin.stripe_failed_hint', { error: `<code>${escapeHtml(g.last_error)}</code>` })}</p>` : ''}
       </div>
     `).join('')}
 
-    <div class="section-title">Seasons awaiting manual lff.lv match (${seasons.length})</div>
-    ${seasons.length === 0 ? `<p class="hint">Nothing pending.</p>` : seasons.map(s => {
+    <div class="section-title">${t(lang, 'admin.seasons_section', { n: seasons.length })}</div>
+    ${seasons.length === 0 ? `<p class="hint">${t(lang, 'admin.nothing_pending')}</p>` : seasons.map(s => {
       return `
       <div class="card">
         <div class="row">
           <span><b>${escapeHtml(s.player_full_name)}</b> — ${escapeHtml(s.season_label)}, ${s.goals}G ${s.assists}A</span>
-          <form method="POST" action="/admin/season/${s.id}/verify"><button type="submit">Mark verified</button></form>
+          <form method="POST" action="/admin/season/${s.id}/verify"><button type="submit">${t(lang, 'admin.mark_verified')}</button></form>
         </div>
-        <p class="hint">Check by hand: <code>${escapeHtml(s.source_url)}</code></p>
+        <p class="hint">${t(lang, 'admin.check_by_hand', { url: `<code>${escapeHtml(s.source_url)}</code>` })}</p>
       </div>`;
     }).join('')}
 
-    <div class="section-title">Scouts awaiting review (${scouts.length})</div>
-    ${scouts.length === 0 ? `<p class="hint">Nothing pending.</p>` : scouts.map(s => `
+    <div class="section-title">${t(lang, 'admin.scouts_section', { n: scouts.length })}</div>
+    ${scouts.length === 0 ? `<p class="hint">${t(lang, 'admin.nothing_pending')}</p>` : scouts.map(s => `
       <div class="card">
         <div class="row">
           <span><b>${escapeHtml(s.name)}</b> — ${escapeHtml(s.organization)} (${escapeHtml(s.role)})</span>
-          <form method="POST" action="/admin/scout/${s.id}/approve"><button type="submit">Approve</button></form>
+          <form method="POST" action="/admin/scout/${s.id}/approve"><button type="submit">${t(lang, 'admin.approve')}</button></form>
         </div>
-        <p class="hint">Profile: ${escapeHtml(s.public_profile_url)}</p>
+        <p class="hint">${t(lang, 'admin.profile_label', { url: escapeHtml(s.public_profile_url) })}</p>
       </div>
     `).join('')}
-  `);
+  `, null, lang);
 }
 
 // Confirms the current request may act as this player/scout: either they're
@@ -455,6 +466,7 @@ async function adminPage() {
 // always view/act on any profile). Writes the appropriate response and
 // returns { ok: false } when neither holds, so callers just `if (!auth.ok) return;`.
 async function authorizeOwnerOrAdmin(req, res, type, id) {
+  const lang = getLang(req);
   const session = await getCurrentSession(req);
   if (session && session.type === type && String(session.record.id) === String(id)) {
     return { ok: true, session };
@@ -463,7 +475,7 @@ async function authorizeOwnerOrAdmin(req, res, type, id) {
     return { ok: true, session: null };
   }
   if (session) {
-    send(res, 403, layout('Not allowed', `<p>This isn't your ${type === 'player' ? 'profile' : 'account'}.</p>`, session));
+    send(res, 403, layout(t(lang, 'error.not_found_title'), `<p>${t(lang, type === 'player' ? 'error.not_allowed_profile' : 'error.not_allowed_account')}</p>`, session, lang));
   } else {
     redirect(res, '/login');
   }
@@ -491,13 +503,23 @@ const server = http.createServer(async (req, res) => {
   const method = req.method;
 
   try {
+    const lang = getLang(req);
+
+    const langMatch = path.match(/^\/lang\/(en|lv|ru)$/);
+    if (method === 'GET' && langMatch) {
+      const attrs = [`${LANG_COOKIE}=${langMatch[1]}`, 'Path=/', 'Max-Age=31536000', 'SameSite=Lax'];
+      if (COOKIE_SECURE) attrs.push('Secure');
+      res.setHeader('Set-Cookie', attrs.join('; '));
+      return redirect(res, req.headers.referer || '/');
+    }
+
     if (path === '/admin' || path.startsWith('/admin/')) {
       if (!requireAdminAuth(req, res)) return;
     }
 
-    if (method === 'GET' && path === '/') return send(res, 200, await homePage());
+    if (method === 'GET' && path === '/') return send(res, 200, await homePage(lang));
 
-    if (method === 'GET' && path === '/player/new') return send(res, 200, playerNewPage());
+    if (method === 'GET' && path === '/player/new') return send(res, 200, playerNewPage(lang));
     if (method === 'POST' && path === '/player/new') {
       const body = await readBody(req);
       let guardian = null;
@@ -517,22 +539,22 @@ const server = http.createServer(async (req, res) => {
     const playerMatch = path.match(/^\/player\/(\d+)$/);
     if (method === 'GET' && playerMatch) {
       const player = await db.getPlayer(playerMatch[1]);
-      if (!player) return send(res, 404, layout('Not found', '<p>Player not found.</p>'));
+      if (!player) return send(res, 404, layout(t(lang, 'error.not_found_title'), `<p>${t(lang, 'error.player_not_found')}</p>`, null, lang));
       const auth = await authorizeOwnerOrAdmin(req, res, 'player', player.id);
       if (!auth.ok) return;
       const guardian = player.guardian_id ? await db.getGuardian(player.guardian_id) : null;
       const seasons = await db.seasonsForPlayer(player.id);
       const videos = await db.videosForPlayer(player.id);
-      return send(res, 200, playerStatusPage(player, guardian, seasons, videos, auth.session));
+      return send(res, 200, playerStatusPage(player, guardian, seasons, videos, auth.session, lang));
     }
 
     const guardianVerifyMatch = path.match(/^\/guardian\/(\d+)\/verify$/);
     if (method === 'GET' && guardianVerifyMatch) {
-      if (!identity.isConfigured()) return send(res, 503, layout('Not available', '<p>Stripe Identity isn\'t configured on this server.</p>'));
+      if (!identity.isConfigured()) return send(res, 503, layout(t(lang, 'error.not_available_title'), `<p>${t(lang, 'error.stripe_not_configured')}</p>`, null, lang));
       const guardian = await db.getGuardian(guardianVerifyMatch[1]);
-      if (!guardian) return send(res, 404, layout('Not found', '<p>Guardian not found.</p>'));
+      if (!guardian) return send(res, 404, layout(t(lang, 'error.not_found_title'), `<p>${t(lang, 'error.guardian_not_found')}</p>`, null, lang));
       const owningPlayer = await db.getPlayerByGuardian(guardian.id);
-      if (!owningPlayer) return send(res, 404, layout('Not found', '<p>No player is linked to this guardian.</p>'));
+      if (!owningPlayer) return send(res, 404, layout(t(lang, 'error.not_found_title'), `<p>${t(lang, 'error.no_linked_player')}</p>`, null, lang));
       const auth = await authorizeOwnerOrAdmin(req, res, 'player', owningPlayer.id);
       if (!auth.ok) return;
       const session = await identity.createVerificationSession(guardian);
@@ -617,7 +639,7 @@ const server = http.createServer(async (req, res) => {
           });
         }
       } catch (err) {
-        return send(res, 400, layout('Upload failed', `<p>${escapeHtml(err.message)}</p><p><a href="/player/${videoMatch[1]}">Back</a></p>`, auth.session));
+        return send(res, 400, layout(t(lang, 'error.upload_failed_title'), `<p>${escapeHtml(err.message)}</p><p><a href="/player/${videoMatch[1]}">${t(lang, 'error.upload_failed_back')}</a></p>`, auth.session, lang));
       }
       return redirect(res, `/player/${videoMatch[1]}`);
     }
@@ -625,12 +647,12 @@ const server = http.createServer(async (req, res) => {
     const uploadMatch = path.match(/^\/uploads\/videos\/([a-f0-9]+\.\w+)$/);
     if (method === 'GET' && uploadMatch) {
       const file = media.readUploadedFile(uploadMatch[1]);
-      if (!file) return send(res, 404, layout('Not found', '<p>Video not found.</p>'));
+      if (!file) return send(res, 404, layout(t(lang, 'error.not_found_title'), `<p>${t(lang, 'error.video_not_found')}</p>`, null, lang));
       res.writeHead(200, { 'Content-Type': file.contentType });
       return fs.createReadStream(file.filePath).pipe(res);
     }
 
-    if (method === 'GET' && path === '/scout/new') return send(res, 200, scoutNewPage());
+    if (method === 'GET' && path === '/scout/new') return send(res, 200, scoutNewPage(lang));
     if (method === 'POST' && path === '/scout/new') {
       const body = await readBody(req);
       const scout = await db.createScout(body);
@@ -641,10 +663,10 @@ const server = http.createServer(async (req, res) => {
     const scoutMatch = path.match(/^\/scout\/(\d+)$/);
     if (method === 'GET' && scoutMatch) {
       const scout = await db.getScout(scoutMatch[1]);
-      if (!scout) return send(res, 404, layout('Not found', '<p>Scout not found.</p>'));
+      if (!scout) return send(res, 404, layout(t(lang, 'error.not_found_title'), `<p>${t(lang, 'error.scout_not_found')}</p>`, null, lang));
       const auth = await authorizeOwnerOrAdmin(req, res, 'scout', scout.id);
       if (!auth.ok) return;
-      return send(res, 200, scoutStatusPage(scout, auth.session));
+      return send(res, 200, scoutStatusPage(scout, auth.session, lang));
     }
 
     const scoutProfileMatch = path.match(/^\/scout\/(\d+)\/profile$/);
@@ -660,28 +682,28 @@ const server = http.createServer(async (req, res) => {
       const currentSession = await getCurrentSession(req);
       const scout = (currentSession && currentSession.type === 'scout') ? currentSession.record : null;
       const players = await db.searchablePlayers();
-      return send(res, 200, searchPage(scout, players, currentSession));
+      return send(res, 200, searchPage(scout, players, currentSession, lang));
     }
 
-    if (method === 'GET' && path === '/login') return send(res, 200, loginPage());
+    if (method === 'GET' && path === '/login') return send(res, 200, loginPage(null, lang));
     if (method === 'POST' && path === '/login') {
       const body = await readBody(req);
       const email = (body.email || '').trim();
       const account = email ? await db.findAccountByEmail(email) : null;
-      if (!account) return send(res, 200, loginPage(`No account found for ${email}.`));
+      if (!account) return send(res, 200, loginPage(t(lang, 'login.error_no_account', { email }), lang));
       const token = await db.createLoginToken(email);
       const link = `${process.env.APP_BASE_URL || 'http://localhost:3000'}/login/verify?token=${token}`;
       if (mailer.isConfigured()) {
         await mailer.sendMagicLink(email, link);
-        return send(res, 200, loginSentPage(email, null));
+        return send(res, 200, loginSentPage(email, null, lang));
       }
-      return send(res, 200, loginSentPage(email, link));
+      return send(res, 200, loginSentPage(email, link, lang));
     }
     if (method === 'GET' && path === '/login/verify') {
       const email = await db.consumeLoginToken(parsed.query.token);
-      if (!email) return send(res, 200, loginPage('That sign-in link is invalid or has expired.'));
+      if (!email) return send(res, 200, loginPage(t(lang, 'login.error_expired'), lang));
       const account = await db.findAccountByEmail(email);
-      if (!account) return send(res, 200, loginPage('No account found for that email anymore.'));
+      if (!account) return send(res, 200, loginPage(t(lang, 'login.error_no_account_anymore'), lang));
       const sessionId = await db.createSession(account.type, account.record.id);
       setSessionCookie(res, sessionId);
       return redirect(res, `/${account.type}/${account.record.id}`);
@@ -693,7 +715,7 @@ const server = http.createServer(async (req, res) => {
       return redirect(res, '/');
     }
 
-    if (method === 'GET' && path === '/admin') return send(res, 200, await adminPage());
+    if (method === 'GET' && path === '/admin') return send(res, 200, await adminPage(lang));
 
     const gApprove = path.match(/^\/admin\/guardian\/(\d+)\/approve$/);
     if (method === 'POST' && gApprove) { await db.approveGuardian(gApprove[1], 'staff'); return redirect(res, '/admin'); }
@@ -706,10 +728,11 @@ const server = http.createServer(async (req, res) => {
     const scApprove = path.match(/^\/admin\/scout\/(\d+)\/approve$/);
     if (method === 'POST' && scApprove) { await db.approveScout(scApprove[1], 'staff'); return redirect(res, '/admin'); }
 
-    send(res, 404, layout('Not found', '<p>Page not found. <a href="/">Home</a></p>'));
+    send(res, 404, layout(t(lang, 'error.not_found_title'), `<p>${t(lang, 'error.page_not_found')}</p>`, null, lang));
   } catch (err) {
     console.error(err);
-    send(res, 500, layout('Error', `<p>Something broke: ${escapeHtml(err.message)}</p>`));
+    const lang = getLang(req);
+    send(res, 500, layout(t(lang, 'error.error_title'), `<p>${t(lang, 'error.something_broke', { message: escapeHtml(err.message) })}</p>`, null, lang));
   }
 });
 
