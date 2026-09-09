@@ -3,6 +3,7 @@
 // without touching server.js's routes or views.js at all.
 
 const { Pool, Client } = require('pg');
+const crypto = require('crypto');
 
 const DB_NAME = process.env.PGDATABASE || 'verifiedxi';
 const CONNECTION_BASE = process.env.DATABASE_URL_BASE || 'postgres://localhost:5432';
@@ -39,7 +40,8 @@ async function init() {
       birth_year INTEGER NOT NULL,
       guardian_id INTEGER REFERENCES guardians(id),
       profile_status TEXT NOT NULL, -- frozen: waiting on guardian review. No timeout — it just waits.
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      email TEXT
     );
 
     CREATE TABLE IF NOT EXISTS seasons (
@@ -68,12 +70,34 @@ async function init() {
       verification_status TEXT NOT NULL DEFAULT 'pending', -- pending -> ai_reviewed -> verified/flagged_for_human/rejected
       ai_confidence_score REAL,
       reviewed_by TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      email TEXT
+    );
+
+    -- Passwordless login: a login_token is a short-lived, single-use code
+    -- emailed (or, without an email provider configured, shown directly) to
+    -- prove someone controls an address; consuming one issues a session.
+    CREATE TABLE IF NOT EXISTS login_tokens (
+      token TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ
+    );
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      subject_type TEXT NOT NULL, -- 'player' or 'scout'
+      subject_id INTEGER NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at TIMESTAMPTZ NOT NULL
     );
 
     ALTER TABLE guardians ADD COLUMN IF NOT EXISTS verified_by TEXT;
     ALTER TABLE guardians ADD COLUMN IF NOT EXISTS stripe_session_id TEXT;
     ALTER TABLE guardians ADD COLUMN IF NOT EXISTS last_error TEXT;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS email TEXT;
+    ALTER TABLE scouts ADD COLUMN IF NOT EXISTS email TEXT;
   `);
 }
 
@@ -146,12 +170,12 @@ async function getPlayerByGuardian(guardianId) {
 }
 
 // ---- Players ----
-async function createPlayer({ full_name, position, club, birth_year, guardian_id }) {
+async function createPlayer({ full_name, position, club, birth_year, guardian_id, email }) {
   const profileStatus = guardian_id ? 'frozen' : 'active';
   const { rows } = await pool.query(
-    `INSERT INTO players (full_name, position, club, birth_year, guardian_id, profile_status)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-    [full_name, position, club, Number(birth_year), guardian_id || null, profileStatus]
+    `INSERT INTO players (full_name, position, club, birth_year, guardian_id, profile_status, email)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [full_name, position, club, Number(birth_year), guardian_id || null, profileStatus, email || null]
   );
   return rows[0];
 }
@@ -196,11 +220,11 @@ async function seasonsForPlayer(playerId) {
 }
 
 // ---- Scouts ----
-async function createScout({ name, organization, role, public_profile_url }) {
+async function createScout({ name, organization, role, public_profile_url, email }) {
   const { rows } = await pool.query(
-    `INSERT INTO scouts (name, organization, role, public_profile_url)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
-    [name, organization, role, public_profile_url]
+    `INSERT INTO scouts (name, organization, role, public_profile_url, email)
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    [name, organization, role, public_profile_url, email || null]
   );
   return rows[0];
 }
@@ -257,6 +281,70 @@ async function searchablePlayers() {
     .filter(p => p.seasons.length > 0);
 }
 
+// ---- Auth: passwordless login + sessions ----
+
+// Looks up whichever account (player or scout) owns this email. Case-insensitive.
+// A real product would need to handle one email owning both a player and a
+// scout account; for now the first match wins, which is fine at this scale.
+async function findAccountByEmail(email) {
+  const { rows: players } = await pool.query(
+    `SELECT * FROM players WHERE lower(email) = lower($1) LIMIT 1`, [email]
+  );
+  if (players[0]) return { type: 'player', record: players[0] };
+  const { rows: scouts } = await pool.query(
+    `SELECT * FROM scouts WHERE lower(email) = lower($1) LIMIT 1`, [email]
+  );
+  if (scouts[0]) return { type: 'scout', record: scouts[0] };
+  return null;
+}
+
+async function createLoginToken(email) {
+  const token = crypto.randomBytes(24).toString('base64url');
+  await pool.query(
+    `INSERT INTO login_tokens (token, email, expires_at) VALUES ($1, $2, now() + interval '15 minutes')`,
+    [token, email]
+  );
+  return token;
+}
+
+// Single-use: an already-consumed or expired token returns null.
+async function consumeLoginToken(token) {
+  const { rows } = await pool.query(
+    `UPDATE login_tokens SET used_at = now()
+     WHERE token = $1 AND used_at IS NULL AND expires_at > now()
+     RETURNING email`,
+    [token]
+  );
+  return rows[0] ? rows[0].email : null;
+}
+
+async function createSession(subjectType, subjectId) {
+  const id = crypto.randomBytes(24).toString('base64url');
+  await pool.query(
+    `INSERT INTO sessions (id, subject_type, subject_id, expires_at) VALUES ($1, $2, $3, now() + interval '30 days')`,
+    [id, subjectType, subjectId]
+  );
+  return id;
+}
+
+// Returns { type, record } for a valid, unexpired session, or null.
+async function getSession(sessionId) {
+  const { rows } = await pool.query(
+    `SELECT * FROM sessions WHERE id = $1 AND expires_at > now()`, [sessionId]
+  );
+  const session = rows[0];
+  if (!session) return null;
+  const record = session.subject_type === 'player'
+    ? await getPlayer(session.subject_id)
+    : await getScout(session.subject_id);
+  if (!record) return null;
+  return { type: session.subject_type, record };
+}
+
+async function deleteSession(sessionId) {
+  await pool.query(`DELETE FROM sessions WHERE id = $1`, [sessionId]);
+}
+
 // Real counts for the homepage ticker — no placeholder numbers.
 async function stats() {
   const { rows } = await pool.query(`
@@ -278,5 +366,7 @@ module.exports = {
   createSeason, verifySeason, seasonsForPlayer,
   createScout, approveScout, getScout,
   pendingGuardians, pendingSeasons, pendingScouts,
-  searchablePlayers
+  searchablePlayers,
+  findAccountByEmail, createLoginToken, consumeLoginToken,
+  createSession, getSession, deleteSession
 };

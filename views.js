@@ -12,7 +12,10 @@ const CHECK_ICON = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" 
 const CLOCK_ICON = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>';
 const CROSS_ICON = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 
-function layout(title, bodyHtml) {
+function layout(title, bodyHtml, session) {
+  const accountNav = session
+    ? `<a href="/${session.type}/${session.record.id}">My ${session.type === 'player' ? 'profile' : 'account'}</a><a href="/logout">Log out</a>`
+    : `<a href="/login">Log in</a>`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -154,6 +157,7 @@ code{background:var(--paper);padding:2px 6px;border-radius:4px;font-size:12px;fo
       <a href="/scout/new">Scout signup</a>
       <a href="/scouts">Search players</a>
       <a href="/admin">Admin</a>
+      ${accountNav}
     </nav>
   </div>
   <div class="wrap">${bodyHtml}</div>

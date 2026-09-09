@@ -5,7 +5,40 @@ const crypto = require('crypto');
 const querystring = require('querystring');
 const db = require('./db');
 const identity = require('./identity');
+const mailer = require('./mailer');
 const { layout, escapeHtml, statusBadge, initials } = require('./views');
+
+const SESSION_COOKIE = 'vxi_session';
+const COOKIE_SECURE = /^https:/.test(process.env.APP_BASE_URL || '');
+
+function parseCookies(req) {
+  const header = req.headers.cookie || '';
+  const out = {};
+  header.split(';').forEach(part => {
+    const i = part.indexOf('=');
+    if (i === -1) return;
+    out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  });
+  return out;
+}
+
+function setSessionCookie(res, sessionId) {
+  const attrs = [`${SESSION_COOKIE}=${sessionId}`, 'HttpOnly', 'Path=/', 'Max-Age=2592000', 'SameSite=Lax'];
+  if (COOKIE_SECURE) attrs.push('Secure');
+  res.setHeader('Set-Cookie', attrs.join('; '));
+}
+
+function clearSessionCookie(res) {
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax`);
+}
+
+// The logged-in player/scout for this request, or null. Does not throw —
+// callers decide whether the route requires a session.
+async function getCurrentSession(req) {
+  const sessionId = parseCookies(req)[SESSION_COOKIE];
+  if (!sessionId) return null;
+  return db.getSession(sessionId);
+}
 
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'staff';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
@@ -114,6 +147,8 @@ function playerNewPage() {
     <h1>Set up your profile</h1>
     <p class="sub">This is what scouts will see first. If the player is under 18, a guardian must be verified before the profile goes live.</p>
     <form method="POST" action="/player/new">
+      <label>Your email</label><input type="email" name="email" required placeholder="you@example.com">
+      <p class="hint">Used to log back in and manage this profile — no password needed, we email a sign-in link.</p>
       <label>Full name</label><input name="full_name" required value="Toms Ozoliņš">
       <label>Position</label>
       <select name="position"><option>GK</option><option>DF</option><option>MF</option><option selected>FW</option></select>
@@ -130,7 +165,7 @@ function playerNewPage() {
   `);
 }
 
-function playerStatusPage(player, guardian, seasons) {
+function playerStatusPage(player, guardian, seasons, session) {
   const canAddSeason = player.profile_status === 'active';
   return layout('Player profile', `
     <div class="eyebrow">Player profile</div>
@@ -181,7 +216,7 @@ function playerStatusPage(player, guardian, seasons) {
         <button type="submit">Submit for verification</button>
       </form>
     ` : `<p class="hint">Season submission unlocks once the guardian is approved.</p>`}
-  `);
+  `, session);
 }
 
 function scoutNewPage() {
@@ -190,6 +225,8 @@ function scoutNewPage() {
     <h1>Verify your organization</h1>
     <p class="sub">Every scout account is reviewed before search access is granted.</p>
     <form method="POST" action="/scout/new">
+      <label>Your email</label><input type="email" name="email" required placeholder="you@example.com">
+      <p class="hint">Used to log back in and search — no password needed, we email a sign-in link.</p>
       <label>Your name</label><input name="name" required value="Jānis Vītols">
       <label>Organization / academy</label><input name="organization" required value="Riga Youth Development Academy">
       <label>Role</label>
@@ -200,24 +237,54 @@ function scoutNewPage() {
   `);
 }
 
-function scoutStatusPage(scout) {
+function scoutStatusPage(scout, session) {
   return layout('Scout status', `
     <div class="eyebrow">Scout status</div>
     <h1>${escapeHtml(scout.name)} ${statusBadge(scout.verification_status)}</h1>
     <p class="sub">${escapeHtml(scout.organization)} · ${escapeHtml(scout.role)}</p>
     ${scout.verification_status === 'verified'
-      ? `<a class="btn" href="/scouts?scoutId=${scout.id}">Search verified players</a>`
+      ? `<a class="btn" href="/scouts">Search verified players</a>`
       : `<p class="hint">Waiting on admin review. This queues on the Admin page.</p>`}
+  `, session);
+}
+
+function loginPage(error) {
+  return layout('Log in', `
+    <div class="eyebrow">Sign in</div>
+    <h1>Log in</h1>
+    <p class="sub">Enter the email you used to sign up as a player or a scout — we'll send a one-time link, no password needed.</p>
+    ${error ? `<p class="hint" style="color:#A5352A;">${escapeHtml(error)}</p>` : ''}
+    <form method="POST" action="/login">
+      <label>Email</label><input type="email" name="email" required placeholder="you@example.com">
+      <button type="submit">Send sign-in link</button>
+    </form>
   `);
 }
 
-function searchPage(scout, players) {
+function loginSentPage(email, devLink) {
+  return layout('Check your email', `
+    <div class="eyebrow">Almost there</div>
+    <h1>Check your email</h1>
+    <p class="sub">If ${escapeHtml(email)} has an account, a sign-in link is on its way. The link expires in 15 minutes.</p>
+    ${devLink ? `
+      <div class="card">
+        <b>No email service is configured on this server yet</b>
+        <p class="hint">So here's the link directly, for local testing:</p>
+        <a class="btn" href="${devLink}">Sign in as ${escapeHtml(email)}</a>
+      </div>
+    ` : ''}
+  `);
+}
+
+function searchPage(scout, players, session) {
   if (!scout || scout.verification_status !== 'verified') {
     return layout('Search', `
       <div class="eyebrow">Scout search</div>
       <h1>Search players</h1>
-      <p class="sub">You need a verified scout account to search. <a href="/scout/new">Sign up</a> or check your status if you already did.</p>
-    `);
+      <p class="sub">${session
+        ? `You need a verified scout account to search. Check your status, or <a href="/scout/new">sign up</a> if you haven't.`
+        : `You need a verified scout account to search. <a href="/login">Log in</a> or <a href="/scout/new">sign up</a> if you haven't.`}</p>
+    `, session);
   }
   return layout('Search players', `
     <div class="eyebrow">Verified · ${escapeHtml(scout.organization)}</div>
@@ -245,7 +312,7 @@ function searchPage(scout, players) {
         <p class="hint">Contact goes to the club, never the player directly.</p>
       </div>
     `).join('')}
-  `);
+  `, session);
 }
 
 async function adminPage() {
@@ -295,6 +362,26 @@ async function adminPage() {
   `);
 }
 
+// Confirms the current request may act as this player/scout: either they're
+// logged in as that exact account, or they authenticated as admin (staff can
+// always view/act on any profile). Writes the appropriate response and
+// returns { ok: false } when neither holds, so callers just `if (!auth.ok) return;`.
+async function authorizeOwnerOrAdmin(req, res, type, id) {
+  const session = await getCurrentSession(req);
+  if (session && session.type === type && String(session.record.id) === String(id)) {
+    return { ok: true, session };
+  }
+  if (checkAdminAuth(req)) {
+    return { ok: true, session: null };
+  }
+  if (session) {
+    send(res, 403, layout('Not allowed', `<p>This isn't your ${type === 'player' ? 'profile' : 'account'}.</p>`, session));
+  } else {
+    redirect(res, '/login');
+  }
+  return { ok: false };
+}
+
 // Applies a Stripe VerificationSession's outcome to a guardian record.
 // 'requires_input' (a failed check that's still retryable — Stripe's normal
 // outcome for a bad document or declined consent) records the reason so the
@@ -331,8 +418,11 @@ const server = http.createServer(async (req, res) => {
       }
       const player = await db.createPlayer({
         full_name: body.full_name, position: body.position, club: body.club,
-        birth_year: body.birth_year, guardian_id: guardian ? guardian.id : null
+        birth_year: body.birth_year, guardian_id: guardian ? guardian.id : null,
+        email: body.email
       });
+      const sessionId = await db.createSession('player', player.id);
+      setSessionCookie(res, sessionId);
       return redirect(res, `/player/${player.id}`);
     }
 
@@ -340,9 +430,11 @@ const server = http.createServer(async (req, res) => {
     if (method === 'GET' && playerMatch) {
       const player = await db.getPlayer(playerMatch[1]);
       if (!player) return send(res, 404, layout('Not found', '<p>Player not found.</p>'));
+      const auth = await authorizeOwnerOrAdmin(req, res, 'player', player.id);
+      if (!auth.ok) return;
       const guardian = player.guardian_id ? await db.getGuardian(player.guardian_id) : null;
       const seasons = await db.seasonsForPlayer(player.id);
-      return send(res, 200, playerStatusPage(player, guardian, seasons));
+      return send(res, 200, playerStatusPage(player, guardian, seasons, auth.session));
     }
 
     const guardianVerifyMatch = path.match(/^\/guardian\/(\d+)\/verify$/);
@@ -390,6 +482,8 @@ const server = http.createServer(async (req, res) => {
 
     const seasonMatch = path.match(/^\/player\/(\d+)\/season$/);
     if (method === 'POST' && seasonMatch) {
+      const auth = await authorizeOwnerOrAdmin(req, res, 'player', seasonMatch[1]);
+      if (!auth.ok) return;
       const body = await readBody(req);
       await db.createSeason({ player_id: seasonMatch[1], ...body });
       return redirect(res, `/player/${seasonMatch[1]}`);
@@ -399,20 +493,54 @@ const server = http.createServer(async (req, res) => {
     if (method === 'POST' && path === '/scout/new') {
       const body = await readBody(req);
       const scout = await db.createScout(body);
+      const sessionId = await db.createSession('scout', scout.id);
+      setSessionCookie(res, sessionId);
       return redirect(res, `/scout/${scout.id}`);
     }
     const scoutMatch = path.match(/^\/scout\/(\d+)$/);
     if (method === 'GET' && scoutMatch) {
       const scout = await db.getScout(scoutMatch[1]);
       if (!scout) return send(res, 404, layout('Not found', '<p>Scout not found.</p>'));
-      return send(res, 200, scoutStatusPage(scout));
+      const auth = await authorizeOwnerOrAdmin(req, res, 'scout', scout.id);
+      if (!auth.ok) return;
+      return send(res, 200, scoutStatusPage(scout, auth.session));
     }
 
     if (method === 'GET' && path === '/scouts') {
-      const scoutId = parsed.query.scoutId;
-      const scout = scoutId ? await db.getScout(scoutId) : null;
+      const currentSession = await getCurrentSession(req);
+      const scout = (currentSession && currentSession.type === 'scout') ? currentSession.record : null;
       const players = await db.searchablePlayers();
-      return send(res, 200, searchPage(scout, players));
+      return send(res, 200, searchPage(scout, players, currentSession));
+    }
+
+    if (method === 'GET' && path === '/login') return send(res, 200, loginPage());
+    if (method === 'POST' && path === '/login') {
+      const body = await readBody(req);
+      const email = (body.email || '').trim();
+      const account = email ? await db.findAccountByEmail(email) : null;
+      if (!account) return send(res, 200, loginPage(`No account found for ${email}.`));
+      const token = await db.createLoginToken(email);
+      const link = `${process.env.APP_BASE_URL || 'http://localhost:3000'}/login/verify?token=${token}`;
+      if (mailer.isConfigured()) {
+        await mailer.sendMagicLink(email, link);
+        return send(res, 200, loginSentPage(email, null));
+      }
+      return send(res, 200, loginSentPage(email, link));
+    }
+    if (method === 'GET' && path === '/login/verify') {
+      const email = await db.consumeLoginToken(parsed.query.token);
+      if (!email) return send(res, 200, loginPage('That sign-in link is invalid or has expired.'));
+      const account = await db.findAccountByEmail(email);
+      if (!account) return send(res, 200, loginPage('No account found for that email anymore.'));
+      const sessionId = await db.createSession(account.type, account.record.id);
+      setSessionCookie(res, sessionId);
+      return redirect(res, `/${account.type}/${account.record.id}`);
+    }
+    if (method === 'GET' && path === '/logout') {
+      const sessionId = parseCookies(req)[SESSION_COOKIE];
+      if (sessionId) await db.deleteSession(sessionId);
+      clearSessionCookie(res);
+      return redirect(res, '/');
     }
 
     if (method === 'GET' && path === '/admin') return send(res, 200, await adminPage());

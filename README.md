@@ -28,7 +28,15 @@ The admin queue's guardian Approve/Reject buttons still work as a manual overrid
 
 **Without `ADMIN_PASSWORD` set, `/admin` is wide open to anyone who finds the URL** — that's only acceptable for local development. Set a real password before deploying this anywhere reachable by the public.
 
-This is one piece of a larger gap: right now players, guardians, and scouts have no login of their own either — their pages are just numeric URLs (`/player/1`, `/scout/1`) with no ownership check. That's a bigger follow-up (real accounts, not just an admin password) needed before this handles real people's data.
+## Player & scout accounts (passwordless login)
+
+Players and scouts now have real accounts, gating `/player/:id`, `/scout/:id`, `/player/:id/season`, and the search page (`/scouts`) — no more trusting a numeric URL or a `?scoutId=` query param. Signup collects an email (`players.email` / `scouts.email`); the account created is auto-logged-in (a session cookie is set right away, since they just proved control of the form).
+
+**How login works after that:** `/login` asks for an email, generates a single-use token (15-minute expiry, stored in `login_tokens`), and would normally email a link to `/login/verify?token=...`. **No email provider is wired up yet** (`mailer.js` is the swap point — mirrors `identity.js`'s pattern), so right now the link is just shown directly on the "check your email" page for local testing. Visiting the link creates a session (`sessions` table, 30-day expiry, `vxi_session` HttpOnly cookie) and redirects to the account's own page.
+
+Ownership is enforced via `authorizeOwnerOrAdmin()` in `server.js`: a request is allowed if the session matches the resource being requested, *or* if valid admin Basic Auth is supplied (staff can always view/act on any profile for support). Anyone else gets redirected to `/login` (if not logged in at all) or a 403 (if logged in as a different account).
+
+**Still missing:** guardians don't have their own login — they only interact via the one-time Stripe Identity redirect tied to their `guardian_id`, which has no expiry or extra confirmation. That's an easier target than it should be (anyone who knows a `guardian_id` can currently kick off a Stripe verification session for it), worth locking down before this is public. Real email delivery for the magic link is also a follow-up, same shape as the Stripe integration — pick a provider (Resend, Postmark, SES), fill in `mailer.js`'s `sendMagicLink`.
 
 ## Why lff.lv isn't automated
 
@@ -64,6 +72,7 @@ By default it connects to `postgres://localhost:5432/verifiedxi` with no user/pa
 - `server.js` — routes and page handlers
 - `db.js` — the data layer; every "real" integration (ID verification, stat matching, scout AI check) replaces one function in here. Now backed by Postgres via the `pg` package.
 - `identity.js` — Stripe Identity integration for guardian ID verification (see above)
+- `mailer.js` — magic-link email delivery; not yet wired to a real provider (see above)
 - `views.js` — shared HTML/CSS shell
 - `data/store.json` — leftover from the Phase 0 JSON-file version; no longer read or written, safe to delete once you've confirmed the Postgres version works for you
 
