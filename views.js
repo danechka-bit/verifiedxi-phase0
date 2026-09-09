@@ -102,6 +102,7 @@ button.danger:hover{background:#FBEAEA;}
 
 .card{background:var(--chalk);border:1.5px solid var(--line);border-radius:var(--radius);padding:20px;margin-bottom:16px;}
 .row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
+.row > *{min-width:0;overflow-wrap:break-word;}
 
 .badge{
   display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;border-radius:20px;
