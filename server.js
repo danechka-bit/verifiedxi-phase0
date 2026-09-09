@@ -93,6 +93,25 @@ const PORT = process.env.PORT || 3000;
 // Renders one highlight video as an embed (YouTube/Vimeo iframe, or a
 // native <video> for an uploaded file); a plain outbound link for anything
 // else (a pasted URL we didn't recognize as YouTube/Vimeo).
+const POSITION_GROUPS = [
+  ['position_group.gk', ['GK']],
+  ['position_group.def', ['LB', 'CB', 'RB']],
+  ['position_group.mid', ['CDM', 'CM', 'LM', 'RM', 'CAM']],
+  ['position_group.att', ['ST', 'RW', 'LW']]
+];
+
+// The same grouped position <option>s used on player signup and the scout
+// search filter, so the two never drift out of sync. `selected` (if given)
+// marks one option as pre-selected — used by the search filter to persist
+// the current filter across a page reload.
+function positionOptionsHtml(lang, selected) {
+  return POSITION_GROUPS.map(([groupKey, codes]) => `
+    <optgroup label="${t(lang, groupKey)}">
+      ${codes.map(code => `<option${code === selected ? ' selected' : ''}>${code}</option>`).join('')}
+    </optgroup>
+  `).join('');
+}
+
 function videoEmbedHtml(v, lang) {
   if (v.source === 'youtube' || v.source === 'vimeo') {
     return `<div class="video-embed"><iframe src="${escapeHtml(v.url)}" frameborder="0" allowfullscreen></iframe></div>`;
@@ -177,26 +196,7 @@ function playerNewPage(lang) {
       <label>${t(lang, 'player_new.position_label')}</label>
       <select name="position" required>
         <option value="" disabled selected>${t(lang, 'player_new.position_placeholder')}</option>
-        <optgroup label="${t(lang, 'position_group.gk')}">
-          <option>GK</option>
-        </optgroup>
-        <optgroup label="${t(lang, 'position_group.def')}">
-          <option>LB</option>
-          <option>CB</option>
-          <option>RB</option>
-        </optgroup>
-        <optgroup label="${t(lang, 'position_group.mid')}">
-          <option>CDM</option>
-          <option>CM</option>
-          <option>LM</option>
-          <option>RM</option>
-          <option>CAM</option>
-        </optgroup>
-        <optgroup label="${t(lang, 'position_group.att')}">
-          <option>ST</option>
-          <option>RW</option>
-          <option>LW</option>
-        </optgroup>
+        ${positionOptionsHtml(lang)}
       </select>
       <label>${t(lang, 'player_new.club_label')}</label><input name="club" required placeholder="${t(lang, 'player_new.club_placeholder')}">
       <label>${t(lang, 'player_new.birth_year_label')}</label><input name="birth_year" required placeholder="${t(lang, 'player_new.birth_year_placeholder')}">
@@ -373,7 +373,7 @@ function loginSentPage(email, devLink, lang) {
   `, null, lang);
 }
 
-function searchPage(scout, players, session, lang) {
+function searchPage(scout, players, session, lang, filters, totalUnfiltered) {
   if (!scout || scout.verification_status !== 'verified') {
     return layout(t(lang, 'search.title_tag'), `
       <div class="eyebrow">${t(lang, 'search.eyebrow')}</div>
@@ -381,11 +381,32 @@ function searchPage(scout, players, session, lang) {
       <p class="sub">${t(lang, session ? 'search.need_verified_in' : 'search.need_verified_out')}</p>
     `, session, lang);
   }
+  filters = filters || {};
+  const hasFilters = filters.position || filters.club || filters.birth_year_min || filters.birth_year_max || filters.min_goals;
   return layout(t(lang, 'search.results_title_tag'), `
     <div class="eyebrow">${t(lang, 'search.results_eyebrow', { org: escapeHtml(scout.organization) })}</div>
     <h1>${t(lang, 'search.results_title')}</h1>
     <p class="sub">${t(lang, 'search.signed_in_as', { name: escapeHtml(scout.name) })}</p>
-    ${players.length === 0 ? `<p class="hint">${t(lang, 'search.no_players')}</p>` : ''}
+
+    <form method="GET" action="/scouts" class="card">
+      <label>${t(lang, 'search.filter_position')}</label>
+      <select name="position">
+        <option value="">${t(lang, 'search.filter_any_position')}</option>
+        ${positionOptionsHtml(lang, filters.position)}
+      </select>
+      <label>${t(lang, 'search.filter_club')}</label>
+      <input name="club" value="${escapeHtml(filters.club || '')}" placeholder="${t(lang, 'search.filter_club_placeholder')}">
+      <div class="stat-grid" style="grid-template-columns:1fr 1fr 1fr;margin-top:14px;">
+        <div><label>${t(lang, 'search.filter_birth_from')}</label><input name="birth_year_min" value="${escapeHtml(filters.birth_year_min || '')}"></div>
+        <div><label>${t(lang, 'search.filter_birth_to')}</label><input name="birth_year_max" value="${escapeHtml(filters.birth_year_max || '')}"></div>
+        <div><label>${t(lang, 'search.filter_min_goals')}</label><input name="min_goals" value="${escapeHtml(filters.min_goals || '')}"></div>
+      </div>
+      <button type="submit">${t(lang, 'search.filter_apply')}</button>
+      ${hasFilters ? `<a class="btn secondary" href="/scouts">${t(lang, 'search.filter_clear')}</a>` : ''}
+    </form>
+
+    <p class="hint">${t(lang, 'search.results_count', { n: players.length })}</p>
+    ${players.length === 0 ? `<p class="hint">${t(lang, totalUnfiltered === 0 ? 'search.no_players' : 'search.no_matches')}</p>` : ''}
     ${players.map(p => `
       <div class="card">
         <div class="player-row" style="border:none;background:transparent;padding:0;margin-bottom:14px;">
@@ -681,8 +702,22 @@ const server = http.createServer(async (req, res) => {
     if (method === 'GET' && path === '/scouts') {
       const currentSession = await getCurrentSession(req);
       const scout = (currentSession && currentSession.type === 'scout') ? currentSession.record : null;
-      const players = await db.searchablePlayers();
-      return send(res, 200, searchPage(scout, players, currentSession, lang));
+      const filters = {
+        position: parsed.query.position || '',
+        club: parsed.query.club || '',
+        birth_year_min: parsed.query.birth_year_min || '',
+        birth_year_max: parsed.query.birth_year_max || '',
+        min_goals: parsed.query.min_goals || ''
+      };
+      const players = await db.searchablePlayers({
+        position: filters.position || undefined,
+        club: filters.club || undefined,
+        birthYearMin: filters.birth_year_min ? Number(filters.birth_year_min) : undefined,
+        birthYearMax: filters.birth_year_max ? Number(filters.birth_year_max) : undefined,
+        minGoals: filters.min_goals ? Number(filters.min_goals) : undefined
+      });
+      const totalUnfiltered = players.length === 0 ? (await db.searchablePlayers()).length : players.length;
+      return send(res, 200, searchPage(scout, players, currentSession, lang, filters, totalUnfiltered));
     }
 
     if (method === 'GET' && path === '/login') return send(res, 200, loginPage(null, lang));

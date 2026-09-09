@@ -320,9 +320,21 @@ async function pendingScouts() {
 }
 
 // ---- Public search (only what a scout should ever see) ----
-async function searchablePlayers() {
+// filters: { position, club, birthYearMin, birthYearMax, minGoals } — all optional.
+// position/club/birth-year are applied in SQL; minGoals is a per-season stat so
+// it's applied after seasons are attached (a player matches if ANY verified
+// season meets it).
+async function searchablePlayers(filters = {}) {
+  const { position, club, birthYearMin, birthYearMax, minGoals } = filters;
   const { rows: players } = await pool.query(
-    `SELECT * FROM players WHERE profile_status = 'active' ORDER BY id`
+    `SELECT * FROM players
+     WHERE profile_status = 'active'
+       AND ($1::text IS NULL OR position = $1)
+       AND ($2::text IS NULL OR club ILIKE '%' || $2 || '%')
+       AND ($3::int IS NULL OR birth_year >= $3)
+       AND ($4::int IS NULL OR birth_year <= $4)
+     ORDER BY id`,
+    [position || null, club || null, birthYearMin || null, birthYearMax || null]
   );
   const { rows: verifiedSeasons } = await pool.query(
     `SELECT * FROM seasons WHERE verification_status = 'verified' ORDER BY id`
@@ -334,7 +346,8 @@ async function searchablePlayers() {
       seasons: verifiedSeasons.filter(s => s.player_id === p.id),
       videos: allVideos.filter(v => v.player_id === p.id)
     }))
-    .filter(p => p.seasons.length > 0);
+    .filter(p => p.seasons.length > 0)
+    .filter(p => !minGoals || p.seasons.some(s => s.goals >= minGoals));
 }
 
 // ---- Auth: passwordless login + sessions ----
