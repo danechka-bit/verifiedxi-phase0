@@ -11,6 +11,7 @@ const mailer = require('./mailer');
 const media = require('./media');
 const { layout, escapeHtml, statusBadge, initials } = require('./views');
 const { t, resolveLang } = require('./i18n');
+const validate = require('./validate');
 
 const SESSION_COOKIE = 'vxi_session';
 const LANG_COOKIE = 'vxi_lang';
@@ -138,6 +139,18 @@ function send(res, status, html) {
 function redirect(res, path) {
   res.writeHead(302, { Location: path });
   res.end();
+}
+
+// A request failed server-side validation (bad/missing data). Renders a
+// small explanatory page with a link back rather than silently coercing bad
+// input (e.g. a negative goal count) into something wrong-but-storable.
+function sendValidationError(res, lang, message, backUrl, session) {
+  send(res, 400, layout(t(lang, 'error.validation_title'), `
+    <div class="eyebrow">${t(lang, 'error.validation_title')}</div>
+    <h1>${t(lang, 'error.validation_title')}</h1>
+    <p class="sub">${message}</p>
+    <a class="btn secondary" href="${backUrl}">${t(lang, 'error.go_back')}</a>
+  `, session, lang));
 }
 
 // ---------------- Pages ----------------
@@ -543,13 +556,34 @@ const server = http.createServer(async (req, res) => {
     if (method === 'GET' && path === '/player/new') return send(res, 200, playerNewPage(lang));
     if (method === 'POST' && path === '/player/new') {
       const body = await readBody(req);
+      if (!validate.isValidEmail(body.email)) {
+        return sendValidationError(res, lang, t(lang, 'error.invalid_email'), '/player/new');
+      }
+      if (!validate.required(body.full_name) || !validate.required(body.club)) {
+        return sendValidationError(res, lang, t(lang, 'error.required_fields'), '/player/new');
+      }
+      if (!validate.oneOf(body.position, validate.POSITIONS)) {
+        return sendValidationError(res, lang, t(lang, 'error.invalid_position'), '/player/new');
+      }
+      const birthYear = validate.intInRange(body.birth_year, validate.BIRTH_YEAR_MIN, validate.BIRTH_YEAR_MAX);
+      if (birthYear === null) {
+        return sendValidationError(res, lang, t(lang, 'error.invalid_birth_year', { min: validate.BIRTH_YEAR_MIN, max: validate.BIRTH_YEAR_MAX }), '/player/new');
+      }
+      const hasGuardianName = validate.required(body.guardian_name);
+      const hasGuardianEmail = validate.required(body.guardian_email);
+      if (hasGuardianName !== hasGuardianEmail) {
+        return sendValidationError(res, lang, t(lang, 'error.guardian_incomplete'), '/player/new');
+      }
+      if (hasGuardianEmail && !validate.isValidEmail(body.guardian_email)) {
+        return sendValidationError(res, lang, t(lang, 'error.invalid_email'), '/player/new');
+      }
       let guardian = null;
-      if (body.guardian_name && body.guardian_email) {
+      if (hasGuardianName && hasGuardianEmail) {
         guardian = await db.createGuardian({ name: body.guardian_name, email: body.guardian_email });
       }
       const player = await db.createPlayer({
         full_name: body.full_name, position: body.position, club: body.club,
-        birth_year: body.birth_year, guardian_id: guardian ? guardian.id : null,
+        birth_year: birthYear, guardian_id: guardian ? guardian.id : null,
         email: body.email
       });
       const sessionId = await db.createSession('player', player.id);
@@ -624,8 +658,23 @@ const server = http.createServer(async (req, res) => {
       const auth = await authorizeOwnerOrAdmin(req, res, 'player', seasonMatch[1]);
       if (!auth.ok) return;
       const body = await readBody(req);
-      await db.createSeason({ player_id: seasonMatch[1], ...body });
-      return redirect(res, `/player/${seasonMatch[1]}`);
+      const backUrl = `/player/${seasonMatch[1]}`;
+      if (!validate.required(body.source_url) || !validate.required(body.club) || !validate.required(body.season_label)) {
+        return sendValidationError(res, lang, t(lang, 'error.required_fields'), backUrl, auth.session);
+      }
+      // These fields aren't required in the form — blank means 0, but
+      // anything present must be a valid number in range (not just coerced
+      // to 0 by a stray minus sign, as `Number(x) || 0` used to allow).
+      const statOrZero = (s, max) => validate.required(s) ? validate.intInRange(s, 0, max) : 0;
+      const apps = statOrZero(body.apps, 100);
+      const goals = statOrZero(body.goals, 300);
+      const assists = statOrZero(body.assists, 300);
+      const minutes = statOrZero(body.minutes, 10000);
+      if (apps === null || goals === null || assists === null || minutes === null) {
+        return sendValidationError(res, lang, t(lang, 'error.invalid_stats', { max: 10000 }), backUrl, auth.session);
+      }
+      await db.createSeason({ player_id: seasonMatch[1], ...body, apps, goals, assists, minutes });
+      return redirect(res, backUrl);
     }
 
     const profileMatch = path.match(/^\/player\/(\d+)\/profile$/);
@@ -633,8 +682,12 @@ const server = http.createServer(async (req, res) => {
       const auth = await authorizeOwnerOrAdmin(req, res, 'player', profileMatch[1]);
       if (!auth.ok) return;
       const body = await readBody(req);
+      const backUrl = `/player/${profileMatch[1]}`;
+      if (!validate.maxLen(body.bio, 2000) || !validate.maxLen(body.photo_url, 2000)) {
+        return sendValidationError(res, lang, t(lang, 'error.text_too_long', { max: 2000 }), backUrl, auth.session);
+      }
       await db.updatePlayerProfile(profileMatch[1], { bio: body.bio, photo_url: body.photo_url });
-      return redirect(res, `/player/${profileMatch[1]}`);
+      return redirect(res, backUrl);
     }
 
     const videoMatch = path.match(/^\/player\/(\d+)\/video$/);
@@ -646,6 +699,9 @@ const server = http.createServer(async (req, res) => {
       const videoUrl = (fields.video_url && fields.video_url[0] || '').trim();
       const title = (fields.title && fields.title[0] || '').trim();
       const uploaded = files.video_file && files.video_file[0];
+      if (!validate.maxLen(title, 200) || !validate.maxLen(videoUrl, 2000)) {
+        return sendValidationError(res, lang, t(lang, 'error.text_too_long', { max: 200 }), `/player/${videoMatch[1]}`, auth.session);
+      }
       try {
         if (uploaded && uploaded.size > 0) {
           const savedPath = media.saveUploadedFile(uploaded);
@@ -676,6 +732,15 @@ const server = http.createServer(async (req, res) => {
     if (method === 'GET' && path === '/scout/new') return send(res, 200, scoutNewPage(lang));
     if (method === 'POST' && path === '/scout/new') {
       const body = await readBody(req);
+      if (!validate.isValidEmail(body.email)) {
+        return sendValidationError(res, lang, t(lang, 'error.invalid_email'), '/scout/new');
+      }
+      if (!validate.required(body.name) || !validate.required(body.organization)) {
+        return sendValidationError(res, lang, t(lang, 'error.required_fields'), '/scout/new');
+      }
+      if (!validate.oneOf(body.role, validate.SCOUT_ROLES)) {
+        return sendValidationError(res, lang, t(lang, 'error.invalid_role'), '/scout/new');
+      }
       const scout = await db.createScout(body);
       const sessionId = await db.createSession('scout', scout.id);
       setSessionCookie(res, sessionId);
@@ -695,8 +760,12 @@ const server = http.createServer(async (req, res) => {
       const auth = await authorizeOwnerOrAdmin(req, res, 'scout', scoutProfileMatch[1]);
       if (!auth.ok) return;
       const body = await readBody(req);
+      const backUrl = `/scout/${scoutProfileMatch[1]}`;
+      if (!validate.maxLen(body.bio, 2000) || !validate.maxLen(body.photo_url, 2000) || !validate.maxLen(body.looking_for, 2000)) {
+        return sendValidationError(res, lang, t(lang, 'error.text_too_long', { max: 2000 }), backUrl, auth.session);
+      }
       await db.updateScoutProfile(scoutProfileMatch[1], { bio: body.bio, photo_url: body.photo_url, looking_for: body.looking_for });
-      return redirect(res, `/scout/${scoutProfileMatch[1]}`);
+      return redirect(res, backUrl);
     }
 
     if (method === 'GET' && path === '/scouts') {

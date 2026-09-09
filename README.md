@@ -53,6 +53,12 @@ Players can set a bio and photo (pasted image URL — no upload service wired up
 
 **Uploaded video storage is local disk (`data/uploads/videos/`) — this will NOT survive most hosting platforms.** Render, Railway, Fly.io, etc. give containers an ephemeral filesystem by default: uploaded files vanish on every redeploy or restart unless you pay for a persistent volume, which most starter tiers don't include. Before deploying, swap `media.js`'s `saveUploadedFile`/`readUploadedFile` for a real object storage upload (S3, Cloudflare R2, Cloudinary) — same swap-point pattern as `identity.js`/`mailer.js`, nothing else needs to change since callers only care about the URL that comes back. Uploaded files are saved under a random filename (the client's filename is never trusted) and validated by extension/size before being written; the serving route (`GET /uploads/videos/:filename`) only matches that exact random-hex-plus-extension pattern, so path traversal isn't reachable through it.
 
+## Input validation
+
+`<input required>` and friends only check what a *browser* submits — anyone can POST directly to any route with whatever they want, so every meaningful constraint is re-checked server-side in `validate.js` before data reaches `db.js`. This closed a real gap: season stats used to go through `Number(x) || 0`, which happily stored `-5` goals (any negative number is truthy) or accepted non-numeric junk as `0` with no complaint. Now: emails are checked against a basic format regex; position and scout role are checked against the same canonical lists the dropdowns offer (so POSTing an arbitrary string instead of picking from the `<select>` gets rejected, not silently stored); birth year must be a real integer in [1930, current year]; season stats must be whole numbers in sane ranges (apps 0-100, goals/assists 0-300, minutes 0-10000) if provided at all — they're optional and default to 0, but garbage isn't accepted as "close enough" to 0 anymore; bio/photo-URL/video-title fields have a length cap. A submission that fails validation never reaches `db.js` — it gets a plain "Check your input" page with the specific reason and a link back, translated the same as everything else.
+
+This also fixed a real product bug in player signup: filling in only a guardian's name *or* only their email (not both) used to be silently treated as "no guardian," which would make an under-18 player's profile immediately ACTIVE and visible to scouts with no ID check at all. Now that combination is rejected outright.
+
 ## Scout search filters
 
 `/scouts` used to return every verified player with no way to narrow it down — fine for a handful of test profiles, useless once there are dozens. It now has a filter form: position (the same grouped dropdown as signup), club (partial match), birth year range, and minimum goals in a season. Filters are plain GET query params (`?position=ST&club=Riga&birth_year_min=2008&min_goals=5`), so results are a shareable/bookmarkable URL, no JavaScript required. Position/club/birth-year are filtered in SQL (`db.searchablePlayers(filters)`); minimum goals is applied afterward since it's a per-season stat, not a player column — a player matches if *any* of their verified seasons clears the threshold.
@@ -100,6 +106,7 @@ By default it connects to `postgres://localhost:5432/verifiedxi` with no user/pa
 - `mailer.js` — magic-link email delivery via Resend, with the same configured/fallback pattern as `identity.js` (see above)
 - `media.js` — highlight video handling: YouTube/Vimeo link parsing and local-disk file uploads (see above — the storage swap-point before deploying)
 - `i18n.js` — English/Latvian/Russian string dictionary and the `t()` lookup helper (see "Languages" above)
+- `validate.js` — server-side input validation helpers (see "Input validation" above)
 - `views.js` — shared HTML/CSS shell
 - `data/store.json` — leftover from the Phase 0 JSON-file version; no longer read or written, safe to delete once you've confirmed the Postgres version works for you
 
