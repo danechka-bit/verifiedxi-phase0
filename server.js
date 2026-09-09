@@ -165,14 +165,36 @@ function playerNewPage() {
     <form method="POST" action="/player/new">
       <label>Your email</label><input type="email" name="email" required placeholder="you@example.com">
       <p class="hint">Used to log back in and manage this profile — no password needed, we email a sign-in link.</p>
-      <label>Full name</label><input name="full_name" required value="Toms Ozoliņš">
+      <label>Full name</label><input name="full_name" required placeholder="Full name">
       <label>Position</label>
-      <select name="position"><option>GK</option><option>DF</option><option>MF</option><option selected>FW</option></select>
-      <label>Club</label><input name="club" required value="BFC Daugava U17">
-      <label>Birth year</label><input name="birth_year" required value="2009">
+      <select name="position" required>
+        <option value="" disabled selected>Choose a position</option>
+        <optgroup label="Goalkeeper">
+          <option>GK</option>
+        </optgroup>
+        <optgroup label="Defenders">
+          <option>LB</option>
+          <option>CB</option>
+          <option>RB</option>
+        </optgroup>
+        <optgroup label="Midfielders">
+          <option>CDM</option>
+          <option>CM</option>
+          <option>LM</option>
+          <option>RM</option>
+          <option>CAM</option>
+        </optgroup>
+        <optgroup label="Attackers">
+          <option>ST</option>
+          <option>RW</option>
+          <option>LW</option>
+        </optgroup>
+      </select>
+      <label>Club</label><input name="club" required placeholder="Club">
+      <label>Birth year</label><input name="birth_year" required placeholder="e.g. 2009">
       <div class="section-title">Guardian (required if under 18)</div>
-      <label>Guardian name</label><input name="guardian_name" value="Ligita Ozoliņa">
-      <label>Guardian email</label><input name="guardian_email" value="ligita.ozolina@example.com">
+      <label>Guardian name</label><input name="guardian_name" placeholder="Guardian name">
+      <label>Guardian email</label><input name="guardian_email" placeholder="guardian@example.com">
       <p class="hint">${identity.isConfigured()
         ? 'After creating the profile, the guardian completes a real ID check through Stripe Identity.'
         : 'Stripe Identity isn\'t configured on this server, so a staff member will approve this guardian manually from the admin queue.'}</p>
