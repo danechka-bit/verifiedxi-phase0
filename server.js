@@ -442,6 +442,10 @@ const server = http.createServer(async (req, res) => {
       if (!identity.isConfigured()) return send(res, 503, layout('Not available', '<p>Stripe Identity isn\'t configured on this server.</p>'));
       const guardian = await db.getGuardian(guardianVerifyMatch[1]);
       if (!guardian) return send(res, 404, layout('Not found', '<p>Guardian not found.</p>'));
+      const owningPlayer = await db.getPlayerByGuardian(guardian.id);
+      if (!owningPlayer) return send(res, 404, layout('Not found', '<p>No player is linked to this guardian.</p>'));
+      const auth = await authorizeOwnerOrAdmin(req, res, 'player', owningPlayer.id);
+      if (!auth.ok) return;
       const session = await identity.createVerificationSession(guardian);
       await db.setGuardianStripeSession(guardian.id, session.id);
       res.writeHead(302, { Location: session.url });
@@ -452,10 +456,13 @@ const server = http.createServer(async (req, res) => {
     if (method === 'GET' && guardianReturnMatch) {
       const guardian = await db.getGuardian(guardianReturnMatch[1]);
       if (!guardian || !guardian.stripe_session_id) return redirect(res, '/');
+      const player = await db.getPlayerByGuardian(guardian.id);
+      if (!player) return redirect(res, '/');
+      const auth = await authorizeOwnerOrAdmin(req, res, 'player', player.id);
+      if (!auth.ok) return;
       const session = await identity.retrieveVerificationSession(guardian.stripe_session_id);
       await applyStripeSessionResult(guardian.id, session);
-      const player = await db.getPlayerByGuardian(guardian.id);
-      return redirect(res, player ? `/player/${player.id}` : '/');
+      return redirect(res, `/player/${player.id}`);
     }
 
     if (method === 'POST' && path === '/webhooks/stripe') {
