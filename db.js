@@ -93,11 +93,30 @@ async function init() {
       expires_at TIMESTAMPTZ NOT NULL
     );
 
+    -- A player's highlight reel: any number of linked (YouTube/Vimeo) or
+    -- uploaded videos. 'upload' rows point at a file under data/uploads/ --
+    -- local disk, which is fine for dev but won't survive most hosting
+    -- platforms' ephemeral filesystems; swap for real object storage
+    -- (S3/R2/Cloudinary) before deploying (see README).
+    CREATE TABLE IF NOT EXISTS videos (
+      id SERIAL PRIMARY KEY,
+      player_id INTEGER NOT NULL REFERENCES players(id),
+      source TEXT NOT NULL, -- 'youtube' | 'vimeo' | 'upload'
+      url TEXT NOT NULL,
+      title TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
     ALTER TABLE guardians ADD COLUMN IF NOT EXISTS verified_by TEXT;
     ALTER TABLE guardians ADD COLUMN IF NOT EXISTS stripe_session_id TEXT;
     ALTER TABLE guardians ADD COLUMN IF NOT EXISTS last_error TEXT;
     ALTER TABLE players ADD COLUMN IF NOT EXISTS email TEXT;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS bio TEXT;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS photo_url TEXT;
     ALTER TABLE scouts ADD COLUMN IF NOT EXISTS email TEXT;
+    ALTER TABLE scouts ADD COLUMN IF NOT EXISTS bio TEXT;
+    ALTER TABLE scouts ADD COLUMN IF NOT EXISTS photo_url TEXT;
+    ALTER TABLE scouts ADD COLUMN IF NOT EXISTS looking_for TEXT;
   `);
 }
 
@@ -180,6 +199,30 @@ async function createPlayer({ full_name, position, club, birth_year, guardian_id
   return rows[0];
 }
 
+async function updatePlayerProfile(id, { bio, photo_url }) {
+  const { rows } = await pool.query(
+    `UPDATE players SET bio = $2, photo_url = $3 WHERE id = $1 RETURNING *`,
+    [id, bio || null, photo_url || null]
+  );
+  return rows[0] || null;
+}
+
+// ---- Videos (a player's highlight reel) ----
+async function addVideo({ player_id, source, url, title }) {
+  const { rows } = await pool.query(
+    `INSERT INTO videos (player_id, source, url, title) VALUES ($1, $2, $3, $4) RETURNING *`,
+    [Number(player_id), source, url, title || null]
+  );
+  return rows[0];
+}
+
+async function videosForPlayer(playerId) {
+  const { rows } = await pool.query(
+    `SELECT * FROM videos WHERE player_id = $1 ORDER BY id DESC`, [playerId]
+  );
+  return rows;
+}
+
 async function getPlayer(id) {
   const { rows } = await pool.query(`SELECT * FROM players WHERE id = $1`, [id]);
   return rows[0] || null;
@@ -243,6 +286,14 @@ async function getScout(id) {
   return rows[0] || null;
 }
 
+async function updateScoutProfile(id, { bio, photo_url, looking_for }) {
+  const { rows } = await pool.query(
+    `UPDATE scouts SET bio = $2, photo_url = $3, looking_for = $4 WHERE id = $1 RETURNING *`,
+    [id, bio || null, photo_url || null, looking_for || null]
+  );
+  return rows[0] || null;
+}
+
 // ---- Admin queues ----
 async function pendingGuardians() {
   const { rows } = await pool.query(
@@ -276,8 +327,13 @@ async function searchablePlayers() {
   const { rows: verifiedSeasons } = await pool.query(
     `SELECT * FROM seasons WHERE verification_status = 'verified' ORDER BY id`
   );
+  const { rows: allVideos } = await pool.query(`SELECT * FROM videos ORDER BY id DESC`);
   return players
-    .map(p => ({ ...p, seasons: verifiedSeasons.filter(s => s.player_id === p.id) }))
+    .map(p => ({
+      ...p,
+      seasons: verifiedSeasons.filter(s => s.player_id === p.id),
+      videos: allVideos.filter(v => v.player_id === p.id)
+    }))
     .filter(p => p.seasons.length > 0);
 }
 
@@ -362,9 +418,10 @@ module.exports = {
   init, stats,
   createGuardian, approveGuardian, rejectGuardian, getGuardian,
   setGuardianStripeSession, setGuardianLastError, getPlayerByGuardian,
-  createPlayer, getPlayer, listPlayers,
+  createPlayer, getPlayer, listPlayers, updatePlayerProfile,
   createSeason, verifySeason, seasonsForPlayer,
-  createScout, approveScout, getScout,
+  createScout, approveScout, getScout, updateScoutProfile,
+  addVideo, videosForPlayer,
   pendingGuardians, pendingSeasons, pendingScouts,
   searchablePlayers,
   findAccountByEmail, createLoginToken, consumeLoginToken,

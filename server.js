@@ -1,11 +1,14 @@
 require('dotenv').config();
 const http = require('http');
 const url = require('url');
+const fs = require('fs');
 const crypto = require('crypto');
 const querystring = require('querystring');
+const { formidable } = require('formidable');
 const db = require('./db');
 const identity = require('./identity');
 const mailer = require('./mailer');
+const media = require('./media');
 const { layout, escapeHtml, statusBadge, initials } = require('./views');
 
 const SESSION_COOKIE = 'vxi_session';
@@ -78,6 +81,19 @@ const SCOUT_ICON = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" 
 const STAFF_ICON = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>';
 
 const PORT = process.env.PORT || 3000;
+
+// Renders one highlight video as an embed (YouTube/Vimeo iframe, or a
+// native <video> for an uploaded file); a plain outbound link for anything
+// else (a pasted URL we didn't recognize as YouTube/Vimeo).
+function videoEmbedHtml(v) {
+  if (v.source === 'youtube' || v.source === 'vimeo') {
+    return `<div class="video-embed"><iframe src="${escapeHtml(v.url)}" frameborder="0" allowfullscreen></iframe></div>`;
+  }
+  if (v.source === 'upload') {
+    return `<div class="video-embed"><video controls src="${escapeHtml(v.url)}"></video></div>`;
+  }
+  return `<p class="hint"><a href="${escapeHtml(v.url)}" target="_blank" rel="noopener">Watch video ↗</a></p>`;
+}
 
 function readBody(req) {
   return new Promise((resolve) => {
@@ -165,17 +181,21 @@ function playerNewPage() {
   `);
 }
 
-function playerStatusPage(player, guardian, seasons, session) {
+function playerStatusPage(player, guardian, seasons, videos, session) {
   const canAddSeason = player.profile_status === 'active';
   return layout('Player profile', `
     <div class="eyebrow">Player profile</div>
     <div class="profile-head">
-      <div class="avatar">${escapeHtml(initials(player.full_name))}</div>
+      ${player.photo_url
+        ? `<img class="avatar-photo" src="${escapeHtml(player.photo_url)}" alt="">`
+        : `<div class="avatar">${escapeHtml(initials(player.full_name))}</div>`}
       <div>
         <div class="name">${escapeHtml(player.full_name.toUpperCase())} ${statusBadge(player.profile_status)}</div>
         <div class="meta">${escapeHtml(player.position)} · ${escapeHtml(player.club)} · born ${player.birth_year}</div>
       </div>
     </div>
+
+    ${player.bio ? `<p class="sub">${escapeHtml(player.bio)}</p>` : ''}
 
     ${guardian ? `
       <div class="card">
@@ -216,6 +236,29 @@ function playerStatusPage(player, guardian, seasons, session) {
         <button type="submit">Submit for verification</button>
       </form>
     ` : `<p class="hint">Season submission unlocks once the guardian is approved.</p>`}
+
+    <div class="section-title">Highlights</div>
+    ${videos.length === 0 ? `<p class="hint">No highlight videos yet.</p>` : videos.map(v => `
+      <div class="card">
+        ${v.title ? `<b>${escapeHtml(v.title)}</b>` : ''}
+        ${videoEmbedHtml(v)}
+      </div>
+    `).join('')}
+    <form method="POST" action="/player/${player.id}/video" enctype="multipart/form-data">
+      <label>YouTube or Vimeo link</label><input type="url" name="video_url" placeholder="https://youtube.com/watch?v=...">
+      <label>Or upload a video file</label><input type="file" name="video_file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v">
+      <label>Title (optional)</label><input name="title" placeholder="e.g. Hat-trick vs Skonto U17">
+      <p class="hint">Provide a link OR a file, not both. Uploads: mp4/mov/webm/m4v, up to 150MB.</p>
+      <button type="submit">Add highlight</button>
+    </form>
+
+    <div class="section-title">Edit profile</div>
+    <form method="POST" action="/player/${player.id}/profile">
+      <label>Bio</label>
+      <textarea name="bio" rows="4" placeholder="Tell scouts about your playing style, achievements, availability...">${escapeHtml(player.bio || '')}</textarea>
+      <label>Photo URL</label><input type="url" name="photo_url" value="${escapeHtml(player.photo_url || '')}" placeholder="https://...">
+      <button type="submit" class="secondary">Save profile</button>
+    </form>
   `, session);
 }
 
@@ -240,11 +283,30 @@ function scoutNewPage() {
 function scoutStatusPage(scout, session) {
   return layout('Scout status', `
     <div class="eyebrow">Scout status</div>
-    <h1>${escapeHtml(scout.name)} ${statusBadge(scout.verification_status)}</h1>
-    <p class="sub">${escapeHtml(scout.organization)} · ${escapeHtml(scout.role)}</p>
+    <div class="profile-head">
+      ${scout.photo_url
+        ? `<img class="avatar-photo" src="${escapeHtml(scout.photo_url)}" alt="">`
+        : `<div class="avatar">${escapeHtml(initials(scout.name))}</div>`}
+      <div>
+        <div class="name">${escapeHtml(scout.name.toUpperCase())} ${statusBadge(scout.verification_status)}</div>
+        <div class="meta">${escapeHtml(scout.organization)} · ${escapeHtml(scout.role)}</div>
+      </div>
+    </div>
+    ${scout.bio ? `<p class="sub">${escapeHtml(scout.bio)}</p>` : ''}
+    ${scout.looking_for ? `<div class="card"><b>Looking for</b><p class="hint">${escapeHtml(scout.looking_for)}</p></div>` : ''}
     ${scout.verification_status === 'verified'
       ? `<a class="btn" href="/scouts">Search verified players</a>`
       : `<p class="hint">Waiting on admin review. This queues on the Admin page.</p>`}
+
+    <div class="section-title">Edit profile</div>
+    <form method="POST" action="/scout/${scout.id}/profile">
+      <label>Bio</label>
+      <textarea name="bio" rows="4" placeholder="A bit about you and your organization...">${escapeHtml(scout.bio || '')}</textarea>
+      <label>Photo URL</label><input type="url" name="photo_url" value="${escapeHtml(scout.photo_url || '')}" placeholder="https://...">
+      <label>Who are you looking for?</label>
+      <textarea name="looking_for" rows="3" placeholder="e.g. Forwards, born 2008-2010, based in Riga region, 8+ goals this season">${escapeHtml(scout.looking_for || '')}</textarea>
+      <button type="submit" class="secondary">Save profile</button>
+    </form>
   `, session);
 }
 
@@ -294,13 +356,16 @@ function searchPage(scout, players, session) {
     ${players.map(p => `
       <div class="card">
         <div class="player-row" style="border:none;background:transparent;padding:0;margin-bottom:14px;">
-          <div class="avatar">${escapeHtml(initials(p.full_name))}</div>
+          ${p.photo_url
+            ? `<img class="avatar-photo" src="${escapeHtml(p.photo_url)}" alt="" style="width:46px;height:46px;">`
+            : `<div class="avatar">${escapeHtml(initials(p.full_name))}</div>`}
           <div>
             <div class="rname">${escapeHtml(p.full_name)}</div>
             <div class="rmeta">${escapeHtml(p.position)} · ${escapeHtml(p.club)} · born ${p.birth_year}</div>
           </div>
           <div style="margin-left:auto;">${statusBadge('active')}</div>
         </div>
+        ${p.bio ? `<p class="hint">${escapeHtml(p.bio)}</p>` : ''}
         ${p.seasons.map(s => `
           <div class="stat-grid">
             <div class="stat-box"><b>${s.apps}</b><span>Apps</span></div>
@@ -309,6 +374,7 @@ function searchPage(scout, players, session) {
             <div class="stat-box"><b>${s.minutes}</b><span>Mins</span></div>
           </div>
         `).join('')}
+        ${p.videos && p.videos.length > 0 ? p.videos.map(v => videoEmbedHtml(v)).join('') : ''}
         <p class="hint">Contact goes to the club, never the player directly.</p>
       </div>
     `).join('')}
@@ -434,7 +500,8 @@ const server = http.createServer(async (req, res) => {
       if (!auth.ok) return;
       const guardian = player.guardian_id ? await db.getGuardian(player.guardian_id) : null;
       const seasons = await db.seasonsForPlayer(player.id);
-      return send(res, 200, playerStatusPage(player, guardian, seasons, auth.session));
+      const videos = await db.videosForPlayer(player.id);
+      return send(res, 200, playerStatusPage(player, guardian, seasons, videos, auth.session));
     }
 
     const guardianVerifyMatch = path.match(/^\/guardian\/(\d+)\/verify$/);
@@ -496,6 +563,51 @@ const server = http.createServer(async (req, res) => {
       return redirect(res, `/player/${seasonMatch[1]}`);
     }
 
+    const profileMatch = path.match(/^\/player\/(\d+)\/profile$/);
+    if (method === 'POST' && profileMatch) {
+      const auth = await authorizeOwnerOrAdmin(req, res, 'player', profileMatch[1]);
+      if (!auth.ok) return;
+      const body = await readBody(req);
+      await db.updatePlayerProfile(profileMatch[1], { bio: body.bio, photo_url: body.photo_url });
+      return redirect(res, `/player/${profileMatch[1]}`);
+    }
+
+    const videoMatch = path.match(/^\/player\/(\d+)\/video$/);
+    if (method === 'POST' && videoMatch) {
+      const auth = await authorizeOwnerOrAdmin(req, res, 'player', videoMatch[1]);
+      if (!auth.ok) return;
+      const form = formidable({ maxFileSize: media.MAX_UPLOAD_BYTES });
+      const [fields, files] = await form.parse(req);
+      const videoUrl = (fields.video_url && fields.video_url[0] || '').trim();
+      const title = (fields.title && fields.title[0] || '').trim();
+      const uploaded = files.video_file && files.video_file[0];
+      try {
+        if (uploaded && uploaded.size > 0) {
+          const savedPath = media.saveUploadedFile(uploaded);
+          await db.addVideo({ player_id: videoMatch[1], source: 'upload', url: savedPath, title });
+        } else if (videoUrl) {
+          const parsed = media.parseVideoLink(videoUrl);
+          await db.addVideo({
+            player_id: videoMatch[1],
+            source: parsed ? parsed.source : 'link',
+            url: parsed ? parsed.embedUrl : videoUrl,
+            title
+          });
+        }
+      } catch (err) {
+        return send(res, 400, layout('Upload failed', `<p>${escapeHtml(err.message)}</p><p><a href="/player/${videoMatch[1]}">Back</a></p>`, auth.session));
+      }
+      return redirect(res, `/player/${videoMatch[1]}`);
+    }
+
+    const uploadMatch = path.match(/^\/uploads\/videos\/([a-f0-9]+\.\w+)$/);
+    if (method === 'GET' && uploadMatch) {
+      const file = media.readUploadedFile(uploadMatch[1]);
+      if (!file) return send(res, 404, layout('Not found', '<p>Video not found.</p>'));
+      res.writeHead(200, { 'Content-Type': file.contentType });
+      return fs.createReadStream(file.filePath).pipe(res);
+    }
+
     if (method === 'GET' && path === '/scout/new') return send(res, 200, scoutNewPage());
     if (method === 'POST' && path === '/scout/new') {
       const body = await readBody(req);
@@ -511,6 +623,15 @@ const server = http.createServer(async (req, res) => {
       const auth = await authorizeOwnerOrAdmin(req, res, 'scout', scout.id);
       if (!auth.ok) return;
       return send(res, 200, scoutStatusPage(scout, auth.session));
+    }
+
+    const scoutProfileMatch = path.match(/^\/scout\/(\d+)\/profile$/);
+    if (method === 'POST' && scoutProfileMatch) {
+      const auth = await authorizeOwnerOrAdmin(req, res, 'scout', scoutProfileMatch[1]);
+      if (!auth.ok) return;
+      const body = await readBody(req);
+      await db.updateScoutProfile(scoutProfileMatch[1], { bio: body.bio, photo_url: body.photo_url, looking_for: body.looking_for });
+      return redirect(res, `/scout/${scoutProfileMatch[1]}`);
     }
 
     if (method === 'GET' && path === '/scouts') {
