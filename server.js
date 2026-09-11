@@ -113,6 +113,81 @@ function positionOptionsHtml(lang, selected) {
   `).join('');
 }
 
+// Aggregate stats across a player's *verified* seasons only — a submitted-
+// but-not-yet-checked season doesn't count toward the trusted total, same
+// logic as why it doesn't appear in scout search either.
+function careerTotals(seasons) {
+  const verified = seasons.filter(s => s.verification_status === 'verified');
+  return verified.reduce((t, s) => ({
+    apps: t.apps + s.apps, goals: t.goals + s.goals,
+    assists: t.assists + s.assists, minutes: t.minutes + s.minutes,
+    seasonsCount: t.seasonsCount + 1
+  }), { apps: 0, goals: 0, assists: 0, minutes: 0, seasonsCount: 0 });
+}
+
+// A Transfermarkt-style "career totals" bar — reuses the homepage ticker's
+// look (bold numbers on a pitch-green bar), skipped entirely if nothing is
+// verified yet rather than showing a bar of zeroes.
+function careerTotalsHtml(seasons, lang) {
+  const totals = careerTotals(seasons);
+  if (totals.seasonsCount === 0) return '';
+  return `
+    <div class="eyebrow">${t(lang, 'player_status.career_totals', { n: totals.seasonsCount })}</div>
+    <div class="ticker">
+      <div class="tstat"><div class="tnum">${totals.apps}</div><div class="tlbl">${t(lang, 'stat.apps')}</div></div>
+      <div class="tdiv"></div>
+      <div class="tstat"><div class="tnum">${totals.goals}</div><div class="tlbl">${t(lang, 'stat.goals')}</div></div>
+      <div class="tdiv"></div>
+      <div class="tstat"><div class="tnum">${totals.assists}</div><div class="tlbl">${t(lang, 'stat.assists')}</div></div>
+      <div class="tdiv"></div>
+      <div class="tstat"><div class="tnum">${totals.minutes}</div><div class="tlbl">${t(lang, 'stat.mins')}</div></div>
+    </div>
+  `;
+}
+
+// Season links are stored without a protocol (e.g. "lff.lv/spelotajs/...",
+// matching the placeholder), which would resolve as a broken relative link
+// in an <a href>. Add https:// only when nothing's there already.
+function withProtocol(url) {
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+}
+
+// The season-by-season record as a compact table (Transfermarkt-style)
+// instead of one big card per season — much more scannable once a player
+// has more than one or two seasons on file. Season label links to the
+// lff.lv source so the underlying record is always one click away.
+function seasonsTableHtml(seasons, lang) {
+  if (seasons.length === 0) return '';
+  return `
+    <div class="table-scroll">
+      <table class="stats-table">
+        <thead><tr>
+          <th>${t(lang, 'stat.season_col')}</th>
+          <th>${t(lang, 'stat.club_col')}</th>
+          <th>${t(lang, 'stat.apps')}</th>
+          <th>${t(lang, 'stat.goals')}</th>
+          <th>${t(lang, 'stat.assists')}</th>
+          <th>${t(lang, 'stat.mins')}</th>
+          <th>${t(lang, 'stat.status_col')}</th>
+        </tr></thead>
+        <tbody>
+          ${seasons.map(s => `
+            <tr>
+              <td><a href="${escapeHtml(withProtocol(s.source_url))}" target="_blank" rel="noopener">${escapeHtml(s.season_label)}</a></td>
+              <td>${escapeHtml(s.club)}</td>
+              <td>${s.apps}</td>
+              <td>${s.goals}</td>
+              <td>${s.assists}</td>
+              <td>${s.minutes}</td>
+              <td>${statusBadge(s.verification_status, lang)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 function videoEmbedHtml(v, lang) {
   if (v.source === 'youtube' || v.source === 'vimeo') {
     return `<div class="video-embed"><iframe src="${escapeHtml(v.url)}" frameborder="0" allowfullscreen></iframe></div>`;
@@ -250,18 +325,8 @@ function playerStatusPage(player, guardian, seasons, videos, session, lang) {
       </div>
     ` : ''}
 
-    ${seasons.map(s => `
-      <div class="card">
-        <div class="row"><b>${escapeHtml(s.season_label)} · ${escapeHtml(s.club)}</b> ${statusBadge(s.verification_status, lang)}</div>
-        <div class="stat-grid">
-          <div class="stat-box"><b>${s.apps}</b><span>${t(lang, 'stat.apps')}</span></div>
-          <div class="stat-box"><b>${s.goals}</b><span>${t(lang, 'stat.goals')}</span></div>
-          <div class="stat-box"><b>${s.assists}</b><span>${t(lang, 'stat.assists')}</span></div>
-          <div class="stat-box"><b>${s.minutes}</b><span>${t(lang, 'stat.mins')}</span></div>
-        </div>
-        <p class="hint">${t(lang, 'player_status.season_source', { url: escapeHtml(s.source_url) })}${s.verified_by ? t(lang, 'player_status.verified_by_manual', { who: escapeHtml(s.verified_by) }) : ''}</p>
-      </div>
-    `).join('')}
+    ${careerTotalsHtml(seasons, lang)}
+    ${seasonsTableHtml(seasons, lang)}
 
     ${canAddSeason ? `
       <div class="section-title">${t(lang, 'add_season.title')}</div>
@@ -433,14 +498,8 @@ function searchPage(scout, players, session, lang, filters, totalUnfiltered) {
           <div style="margin-left:auto;">${statusBadge('active', lang)}</div>
         </div>
         ${p.bio ? `<p class="hint">${escapeHtml(p.bio)}</p>` : ''}
-        ${p.seasons.map(s => `
-          <div class="stat-grid">
-            <div class="stat-box"><b>${s.apps}</b><span>${t(lang, 'stat.apps')}</span></div>
-            <div class="stat-box"><b>${s.goals}</b><span>${t(lang, 'stat.goals')}</span></div>
-            <div class="stat-box"><b>${s.assists}</b><span>${t(lang, 'stat.assists')}</span></div>
-            <div class="stat-box"><b>${s.minutes}</b><span>${t(lang, 'stat.mins')}</span></div>
-          </div>
-        `).join('')}
+        ${careerTotalsHtml(p.seasons, lang)}
+        ${seasonsTableHtml(p.seasons, lang)}
         ${p.videos && p.videos.length > 0 ? p.videos.map(v => videoEmbedHtml(v, lang)).join('') : ''}
         <p class="hint">${t(lang, 'search.contact_hint')}</p>
       </div>

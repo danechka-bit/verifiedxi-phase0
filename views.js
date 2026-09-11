@@ -143,6 +143,20 @@ code{background:var(--paper);padding:2px 6px;border-radius:4px;font-size:12px;fo
 .ticker .tlbl{font-size:9.5px;text-transform:uppercase;letter-spacing:0.4px;color:rgba(245,242,233,0.65);margin-top:4px;}
 .ticker .tdiv{width:1px;background:rgba(245,242,233,0.15);margin:2px 2px;}
 
+/* Season stats table (career record) */
+.table-scroll{overflow-x:auto;margin-bottom:16px;}
+.stats-table{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap;}
+.stats-table th{
+  text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;
+  color:var(--turf);padding:8px 10px;border-bottom:1.5px solid var(--line);
+}
+.stats-table td{padding:9px 10px;border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;}
+.stats-table td:first-child, .stats-table td:nth-child(2){font-family:'Inter',sans-serif;}
+.stats-table tr:last-child td{border-bottom:none;}
+.stats-table a{color:var(--pitch);font-weight:600;text-decoration:none;}
+.stats-table a:hover{text-decoration:underline;}
+.stats-table .badge{padding:3px 8px 3px 6px;font-size:9.5px;}
+
 /* Avatar / jersey badge */
 .avatar{
   width:46px;height:46px;border-radius:12px;flex-shrink:0;
