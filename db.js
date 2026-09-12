@@ -8,14 +8,30 @@ const crypto = require('crypto');
 const DB_NAME = process.env.PGDATABASE || 'verifiedxi';
 const CONNECTION_BASE = process.env.DATABASE_URL_BASE || 'postgres://localhost:5432';
 
-const pool = new Pool({ connectionString: `${CONNECTION_BASE}/${DB_NAME}` });
+// Local Postgres.app needs no SSL; Supabase/Neon/Render Postgres/RDS and
+// basically every hosted provider require it for external connections.
+// Skip it only for an explicit localhost connection; PGSSL=false overrides.
+const useSSL = process.env.PGSSL === 'false' ? false : !/localhost|127\.0\.0\.1/.test(CONNECTION_BASE);
+const sslConfig = useSSL ? { rejectUnauthorized: false } : false;
 
+const pool = new Pool({ connectionString: `${CONNECTION_BASE}/${DB_NAME}`, ssl: sslConfig });
+
+// Hosted providers (Supabase et al.) give you one pre-made database and
+// typically don't grant permission to create more — that's fine, since
+// pointing PGDATABASE at their existing database (usually "postgres") makes
+// this whole step a no-op (SELECT finds it already exists, CREATE never
+// runs). Still wrapped defensively: if a permission error happens anyway,
+// warn and continue rather than crashing startup over an optional step.
 async function ensureDatabase() {
-  const admin = new Client({ connectionString: `${CONNECTION_BASE}/postgres` });
-  await admin.connect();
-  const { rowCount } = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [DB_NAME]);
-  if (rowCount === 0) await admin.query(`CREATE DATABASE "${DB_NAME}"`);
-  await admin.end();
+  try {
+    const admin = new Client({ connectionString: `${CONNECTION_BASE}/postgres`, ssl: sslConfig });
+    await admin.connect();
+    const { rowCount } = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [DB_NAME]);
+    if (rowCount === 0) await admin.query(`CREATE DATABASE "${DB_NAME}"`);
+    await admin.end();
+  } catch (err) {
+    console.warn(`Skipping database auto-create (${err.message}) — assuming "${DB_NAME}" already exists.`);
+  }
 }
 
 async function init() {
