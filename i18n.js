@@ -142,6 +142,7 @@ const STRINGS = {
     'login.email_label': 'Email',
     'login.submit': 'Send sign-in link',
     'login.error_no_account': 'No account found for {email}.',
+    'login.error_send_failed': "Couldn't send the sign-in email — double-check the address and try again.",
     'login.error_expired': 'That sign-in link is invalid or has expired.',
     'login.error_no_account_anymore': 'No account found for that email anymore.',
 
@@ -353,6 +354,7 @@ const STRINGS = {
     'login.email_label': 'E-pasts',
     'login.submit': 'Nosūtīt pieslēgšanās saiti',
     'login.error_no_account': 'Konts ar e-pastu {email} nav atrasts.',
+    'login.error_send_failed': 'Neizdevās nosūtīt pieslēgšanās e-pastu — pārbaudi adresi un mēģini vēlreiz.',
     'login.error_expired': 'Šī pieslēgšanās saite vairs nav derīga vai ir beidzies tās derīguma termiņš.',
     'login.error_no_account_anymore': 'Konts ar šo e-pastu vairs nav atrodams.',
 
@@ -564,6 +566,7 @@ const STRINGS = {
     'login.email_label': 'Email',
     'login.submit': 'Отправить ссылку для входа',
     'login.error_no_account': 'Аккаунт с email {email} не найден.',
+    'login.error_send_failed': 'Не удалось отправить письмо для входа — проверь адрес и попробуй ещё раз.',
     'login.error_expired': 'Эта ссылка для входа недействительна или её срок истёк.',
     'login.error_no_account_anymore': 'Аккаунт с этим email больше не найден.',
 

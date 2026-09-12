@@ -871,7 +871,12 @@ const server = http.createServer(async (req, res) => {
       const token = await db.createLoginToken(email);
       const link = `${process.env.APP_BASE_URL || 'http://localhost:3000'}/login/verify?token=${token}`;
       if (mailer.isConfigured()) {
-        await mailer.sendMagicLink(email, link);
+        try {
+          await mailer.sendMagicLink(email, link);
+        } catch (err) {
+          console.error('Failed to send magic link:', err.message);
+          return send(res, 200, loginPage(t(lang, 'login.error_send_failed'), lang));
+        }
         return send(res, 200, loginSentPage(email, null, lang));
       }
       return send(res, 200, loginSentPage(email, link, lang));
