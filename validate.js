@@ -38,7 +38,32 @@ const CURRENT_YEAR = new Date().getFullYear();
 const BIRTH_YEAR_MIN = 1930;
 const BIRTH_YEAR_MAX = CURRENT_YEAR;
 
+// The three federation sites a season's source link can be checked against —
+// researched directly (robots.txt + real player pages opened), not assumed.
+// Latvia (lff.lv) has no individual player pages at all, just name-only
+// top-scorer lists. Lithuania (lietuvosfutbolas.lt) and Estonia (jalgpall.ee)
+// both have real per-player pages with a stable numeric ID; Estonia's also
+// pre-aggregates season/competition stats, Lithuania's doesn't.
+const FEDERATIONS = {
+  LV: { domain: 'lff.lv' },
+  LT: { domain: 'lietuvosfutbolas.lt' },
+  EE: { domain: 'jalgpall.ee' }
+};
+
+// A season's source_url must actually point at the player's own federation's
+// site — otherwise a Latvian-registered player could submit an Estonian
+// stats link (or anything else) and there'd be nothing for admin to check
+// against. Domain match only (not full URL validation, since links here are
+// pasted without a protocol, e.g. "lff.lv/spelotajs/...").
+function isValidSourceUrl(url, federation) {
+  const domain = FEDERATIONS[federation] && FEDERATIONS[federation].domain;
+  if (!domain || typeof url !== 'string') return false;
+  const bare = url.trim().replace(/^https?:\/\//i, '').replace(/^www\./i, '');
+  return bare.toLowerCase().startsWith(domain);
+}
+
 module.exports = {
   isValidEmail, required, maxLen, oneOf, intInRange,
-  POSITIONS, SCOUT_ROLES, BIRTH_YEAR_MIN, BIRTH_YEAR_MAX
+  POSITIONS, SCOUT_ROLES, BIRTH_YEAR_MIN, BIRTH_YEAR_MAX,
+  FEDERATIONS, isValidSourceUrl
 };

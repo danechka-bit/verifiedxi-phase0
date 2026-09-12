@@ -75,9 +75,23 @@ The full site is available in English, Latvian, and Russian — the `EN / LV / R
 
 Adding a fourth language means adding one more object to `i18n.js`'s `STRINGS` and one line to `LANGUAGES` — no other file needs to change. Missing keys in a language silently fall back to English rather than showing a blank or a raw key.
 
-## Why lff.lv isn't automated
+## Three federations: Latvia, Lithuania, Estonia
+
+A player picks their federation/country at signup (`players.federation`: `LV`/`LT`/`EE`), and their season's source link is validated to actually be from that federation's site — a Latvian-registered player can't submit an Estonian stats link (or anything else), checked via `validate.isValidSourceUrl()` matching just the domain (links are pasted without a protocol, e.g. `lff.lv/spelotajs/...`, `https://` is added automatically wherever the link becomes clickable). The "source link" field's label, placeholder, and hint text all show the correct domain for whichever federation the player picked, and the admin queue shows each pending season's federation so staff know which site to check by hand.
+
+The three sites were researched directly — robots.txt, real player pages opened — not assumed to be alike, and they aren't:
+
+- **Latvia (lff.lv)**: no individual player pages at all, just name-only top-scorer lists with no stable ID.
+- **Lithuania (lietuvosfutbolas.lt / jaunimofutbolas.lt)**: real individual player pages (`/zaidejai/name-id/`) with a stable numeric ID and full match history across seasons, but goals/assists aren't pre-summed — derivable from match event logs, not handed to you.
+- **Estonia (jalgpall.ee)**: the richest of the three. Real player pages (`/voistlused/player/id/team/id`) with a stable numeric ID, date of birth, nationality, and pre-aggregated stats (apps/minutes/goals/assists/cards) filterable by season/competition/team back to 2019. It's a JS-rendered app, though, so any future automation there would need a real browser, not a plain HTTP fetch.
+
+`FEDERATIONS` in `validate.js` is the single source of truth for the three domains — adding a fourth country later means one more entry there plus its translated display name in `i18n.js`, nothing else changes.
+
+## Why none of this is automated (yet)
 
 Investigated scraping lff.lv to auto-verify season stats instead of the manual admin check. Findings: the site's league/standings pages are plain server-rendered HTML with no login wall or CAPTCHA, so *scraping itself* is technically easy. But there's no individual player profile page or stable player ID anywhere on the public site — a player's full season line (apps/goals/assists/minutes) would have to be reconstructed by crawling every match report for their club and summing events by name, with no way to disambiguate two players sharing a name. That's fragile and exactly wrong for a product whose premise is verified accuracy. LFF runs a real competition system (COMET, at comet.lff.lv) with a club-facing portal — asking LFF directly about data access is a better path to automation than scraping, if that's worth pursuing later.
+
+Lithuania and Estonia weren't automated either, even though Estonia in particular has a real stable player ID (the thing that made Latvia infeasible) — that's a meaningfully bigger and separately-scoped effort (Estonia's site needs a headless browser, not curl) that hasn't been decided on yet, not something ruled out.
 
 ## Running it
 

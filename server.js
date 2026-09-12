@@ -286,6 +286,10 @@ function playerNewPage(lang) {
         <option value="" disabled selected>${t(lang, 'player_new.position_placeholder')}</option>
         ${positionOptionsHtml(lang)}
       </select>
+      <label>${t(lang, 'player_new.federation_label')}</label>
+      <select name="federation" required>
+        ${Object.keys(validate.FEDERATIONS).map(code => `<option value="${code}">${t(lang, `federation.${code}`)}</option>`).join('')}
+      </select>
       <label>${t(lang, 'player_new.club_label')}</label><input name="club" required placeholder="${t(lang, 'player_new.club_placeholder')}">
       <label>${t(lang, 'player_new.birth_year_label')}</label><input name="birth_year" required placeholder="${t(lang, 'player_new.birth_year_placeholder')}">
       <div class="section-title">${t(lang, 'player_new.guardian_section')}</div>
@@ -328,10 +332,12 @@ function playerStatusPage(player, guardian, seasons, videos, session, lang) {
     ${careerTotalsHtml(seasons, lang)}
     ${seasonsTableHtml(seasons, lang)}
 
-    ${canAddSeason ? `
+    ${canAddSeason ? (() => {
+      const domain = validate.FEDERATIONS[player.federation].domain;
+      return `
       <div class="section-title">${t(lang, 'add_season.title')}</div>
       <form method="POST" action="/player/${player.id}/season">
-        <label>${t(lang, 'add_season.link_label')}</label><input name="source_url" required placeholder="${t(lang, 'add_season.link_placeholder')}">
+        <label>${t(lang, 'add_season.link_label', { domain })}</label><input name="source_url" required placeholder="${t(lang, 'add_season.link_placeholder', { domain })}">
         <label>${t(lang, 'add_season.club_label')}</label><input name="club" required value="${escapeHtml(player.club)}">
         <label>${t(lang, 'add_season.season_label_label')}</label><input name="season_label" required placeholder="${t(lang, 'add_season.season_label_placeholder')}">
         <div class="stat-grid" style="margin-top:14px;">
@@ -340,10 +346,10 @@ function playerStatusPage(player, guardian, seasons, videos, session, lang) {
           <div><label>${t(lang, 'stat.assists')}</label><input name="assists" placeholder="0"></div>
           <div><label>${t(lang, 'stat.mins')}</label><input name="minutes" placeholder="0"></div>
         </div>
-        <p class="hint">${t(lang, 'add_season.hint')}</p>
+        <p class="hint">${t(lang, 'add_season.hint', { domain })}</p>
         <button type="submit">${t(lang, 'add_season.submit')}</button>
       </form>
-    ` : `<p class="hint">${t(lang, 'add_season.locked_hint')}</p>`}
+    `; })() : `<p class="hint">${t(lang, 'add_season.locked_hint')}</p>`}
 
     <div class="section-title">${t(lang, 'highlights.title')}</div>
     ${videos.length === 0 ? `<p class="hint">${t(lang, 'highlights.none')}</p>` : videos.map(v => `
@@ -534,7 +540,7 @@ async function adminPage(lang) {
       return `
       <div class="card">
         <div class="row">
-          <span><b>${escapeHtml(s.player_full_name)}</b> — ${escapeHtml(s.season_label)}, ${s.goals}G ${s.assists}A</span>
+          <span><b>${escapeHtml(s.player_full_name)}</b> · ${t(lang, `federation.${s.player_federation}`)} — ${escapeHtml(s.season_label)}, ${s.goals}G ${s.assists}A</span>
           <form method="POST" action="/admin/season/${s.id}/verify"><button type="submit">${t(lang, 'admin.mark_verified')}</button></form>
         </div>
         <p class="hint">${t(lang, 'admin.check_by_hand', { url: `<code>${escapeHtml(s.source_url)}</code>` })}</p>
@@ -624,6 +630,9 @@ const server = http.createServer(async (req, res) => {
       if (!validate.oneOf(body.position, validate.POSITIONS)) {
         return sendValidationError(res, lang, t(lang, 'error.invalid_position'), '/player/new');
       }
+      if (!validate.oneOf(body.federation, Object.keys(validate.FEDERATIONS))) {
+        return sendValidationError(res, lang, t(lang, 'error.invalid_federation'), '/player/new');
+      }
       const birthYear = validate.intInRange(body.birth_year, validate.BIRTH_YEAR_MIN, validate.BIRTH_YEAR_MAX);
       if (birthYear === null) {
         return sendValidationError(res, lang, t(lang, 'error.invalid_birth_year', { min: validate.BIRTH_YEAR_MIN, max: validate.BIRTH_YEAR_MAX }), '/player/new');
@@ -643,7 +652,7 @@ const server = http.createServer(async (req, res) => {
       const player = await db.createPlayer({
         full_name: body.full_name, position: body.position, club: body.club,
         birth_year: birthYear, guardian_id: guardian ? guardian.id : null,
-        email: body.email
+        email: body.email, federation: body.federation
       });
       const sessionId = await db.createSession('player', player.id);
       setSessionCookie(res, sessionId);
@@ -720,6 +729,11 @@ const server = http.createServer(async (req, res) => {
       const backUrl = `/player/${seasonMatch[1]}`;
       if (!validate.required(body.source_url) || !validate.required(body.club) || !validate.required(body.season_label)) {
         return sendValidationError(res, lang, t(lang, 'error.required_fields'), backUrl, auth.session);
+      }
+      const seasonPlayer = await db.getPlayer(seasonMatch[1]);
+      if (!validate.isValidSourceUrl(body.source_url, seasonPlayer.federation)) {
+        const domain = validate.FEDERATIONS[seasonPlayer.federation].domain;
+        return sendValidationError(res, lang, t(lang, 'add_season.wrong_domain', { domain }), backUrl, auth.session);
       }
       // These fields aren't required in the form — blank means 0, but
       // anything present must be a valid number in range (not just coerced

@@ -41,7 +41,8 @@ async function init() {
       guardian_id INTEGER REFERENCES guardians(id),
       profile_status TEXT NOT NULL, -- frozen: waiting on guardian review. No timeout — it just waits.
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      email TEXT
+      email TEXT,
+      federation TEXT NOT NULL DEFAULT 'LV' -- 'LV' | 'LT' | 'EE' — which federation site season links are checked against
     );
 
     CREATE TABLE IF NOT EXISTS seasons (
@@ -113,6 +114,7 @@ async function init() {
     ALTER TABLE players ADD COLUMN IF NOT EXISTS email TEXT;
     ALTER TABLE players ADD COLUMN IF NOT EXISTS bio TEXT;
     ALTER TABLE players ADD COLUMN IF NOT EXISTS photo_url TEXT;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS federation TEXT NOT NULL DEFAULT 'LV';
     ALTER TABLE scouts ADD COLUMN IF NOT EXISTS email TEXT;
     ALTER TABLE scouts ADD COLUMN IF NOT EXISTS bio TEXT;
     ALTER TABLE scouts ADD COLUMN IF NOT EXISTS photo_url TEXT;
@@ -189,12 +191,12 @@ async function getPlayerByGuardian(guardianId) {
 }
 
 // ---- Players ----
-async function createPlayer({ full_name, position, club, birth_year, guardian_id, email }) {
+async function createPlayer({ full_name, position, club, birth_year, guardian_id, email, federation }) {
   const profileStatus = guardian_id ? 'frozen' : 'active';
   const { rows } = await pool.query(
-    `INSERT INTO players (full_name, position, club, birth_year, guardian_id, profile_status, email)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-    [full_name, position, club, Number(birth_year), guardian_id || null, profileStatus, email || null]
+    `INSERT INTO players (full_name, position, club, birth_year, guardian_id, profile_status, email, federation)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+    [full_name, position, club, Number(birth_year), guardian_id || null, profileStatus, email || null, federation]
   );
   return rows[0];
 }
@@ -304,7 +306,7 @@ async function pendingGuardians() {
 
 async function pendingSeasons() {
   const { rows } = await pool.query(
-    `SELECT seasons.*, players.full_name AS player_full_name
+    `SELECT seasons.*, players.full_name AS player_full_name, players.federation AS player_federation
      FROM seasons JOIN players ON players.id = seasons.player_id
      WHERE seasons.verification_status = 'submitted'
      ORDER BY seasons.id`
