@@ -57,7 +57,13 @@ Deliberately did not borrow Transfermarkt's actual defining feature — market v
 
 Players can set a bio and photo (pasted image URL — no upload service wired up for photos) from their own profile page, and post any number of highlight videos: either paste a YouTube/Vimeo link (parsed into a real embed by `media.js`'s `parseVideoLink`) or upload a video file directly (mp4/mov/webm/m4v, 150MB max). Scouts see all of it — photo, bio, and embedded videos — right in search results, alongside the verified stats. Scouts can set their own photo, bio, and a free-text "who are you looking for" field from their own profile page.
 
-**Uploaded video storage is local disk (`data/uploads/videos/`) — this will NOT survive most hosting platforms.** Render, Railway, Fly.io, etc. give containers an ephemeral filesystem by default: uploaded files vanish on every redeploy or restart unless you pay for a persistent volume, which most starter tiers don't include. Before deploying, swap `media.js`'s `saveUploadedFile`/`readUploadedFile` for a real object storage upload (S3, Cloudflare R2, Cloudinary) — same swap-point pattern as `identity.js`/`mailer.js`, nothing else needs to change since callers only care about the URL that comes back. Uploaded files are saved under a random filename (the client's filename is never trusted) and validated by extension/size before being written; the serving route (`GET /uploads/videos/:filename`) only matches that exact random-hex-plus-extension pattern, so path traversal isn't reachable through it.
+**Uploaded video storage is Cloudinary when configured, local disk otherwise.** Render, Railway, Fly.io, etc. give containers an ephemeral filesystem by default: files saved to local disk vanish on every redeploy or restart unless you pay for a persistent volume, which most starter tiers don't include — so local disk is fine for development but must not be what's running in production.
+
+Set these to turn on real cloud storage:
+
+- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` — from your [Cloudinary](https://cloudinary.com) dashboard (free tier). Sign up, then Console Settings → API Keys.
+
+Without all three set, `media.js`'s `isCloudConfigured()` returns false and uploads fall back to local disk — same configured/fallback pattern as `identity.js` and `mailer.js`. Uploaded files are validated by extension/size before ever reaching Cloudinary or disk, and the client's filename is never trusted either way (local-fallback files get a random hex name). The local-only serving route (`GET /uploads/videos/:filename`) only matches that exact random-hex-plus-extension pattern, so path traversal isn't reachable through it; Cloudinary-hosted videos skip that route entirely since their stored URL is already the permanent `https://res.cloudinary.com/...` address.
 
 ## Input validation
 
@@ -124,7 +130,7 @@ By default it connects to `postgres://localhost:5432/verifiedxi` with no user/pa
 - `db.js` — the data layer; every "real" integration (ID verification, stat matching, scout AI check) replaces one function in here. Now backed by Postgres via the `pg` package.
 - `identity.js` — Stripe Identity integration for guardian ID verification (see above)
 - `mailer.js` — magic-link email delivery via Resend, with the same configured/fallback pattern as `identity.js` (see above)
-- `media.js` — highlight video handling: YouTube/Vimeo link parsing and local-disk file uploads (see above — the storage swap-point before deploying)
+- `media.js` — highlight video handling: YouTube/Vimeo link parsing, and file uploads to Cloudinary (or local disk as a dev-only fallback) — see above
 - `i18n.js` — English/Latvian/Russian string dictionary and the `t()` lookup helper (see "Languages" above)
 - `validate.js` — server-side input validation helpers (see "Input validation" above)
 - `views.js` — shared HTML/CSS shell

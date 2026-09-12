@@ -5,6 +5,7 @@
   "type": "commonjs",
   "scripts": { "start": "node server.js" },
   "dependencies": {
+    "cloudinary": "^2.5.1",
     "dotenv": "^16.4.5",
     "formidable": "^3.5.1",
     "pg": "^8.13.1",

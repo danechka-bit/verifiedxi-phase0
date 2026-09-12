@@ -777,7 +777,7 @@ const server = http.createServer(async (req, res) => {
       }
       try {
         if (uploaded && uploaded.size > 0) {
-          const savedPath = media.saveUploadedFile(uploaded);
+          const savedPath = await media.saveUploadedFile(uploaded);
           await db.addVideo({ player_id: videoMatch[1], source: 'upload', url: savedPath, title });
         } else if (videoUrl) {
           const parsed = media.parseVideoLink(videoUrl);
