@@ -184,6 +184,18 @@ code{background:var(--paper);padding:2px 6px;border-radius:4px;font-size:12px;fo
 }
 .player-row .rname{font-weight:700;font-size:14.5px;}
 .player-row .rmeta{font-size:12px;color:var(--ink-soft);margin-top:2px;}
+
+/* Footer */
+.footer{max-width:640px;margin:0 auto;padding:0 20px 40px;text-align:center;font-size:12px;color:var(--ink-soft);}
+.footer a{color:var(--ink-soft);text-decoration:underline;}
+.footer-dot{margin:0 8px;}
+
+/* Legal pages */
+.legal h2{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:0.3px;margin:32px 0 10px;}
+.legal p{font-size:14px;line-height:1.6;color:var(--ink);margin:0 0 14px;}
+.legal ul{margin:0 0 14px;padding-left:20px;}
+.legal li{font-size:14px;line-height:1.6;margin-bottom:6px;}
+.legal .updated{font-size:12px;color:var(--ink-soft);margin-bottom:24px;}
 </style>
 </head>
 <body>
@@ -201,6 +213,11 @@ code{background:var(--paper);padding:2px 6px;border-radius:4px;font-size:12px;fo
     </nav>
   </div>
   <div class="wrap">${bodyHtml}</div>
+  <div class="footer">
+    <a href="/privacy">${t(lang, 'footer.privacy')}</a>
+    <span class="footer-dot">·</span>
+    <a href="/terms">${t(lang, 'footer.terms')}</a>
+  </div>
 </body>
 </html>`;
 }

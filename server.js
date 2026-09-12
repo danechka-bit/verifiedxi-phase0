@@ -12,6 +12,7 @@ const media = require('./media');
 const { layout, escapeHtml, statusBadge, initials } = require('./views');
 const { t, resolveLang } = require('./i18n');
 const validate = require('./validate');
+const legal = require('./legal');
 
 const SESSION_COOKIE = 'vxi_session';
 const LANG_COOKIE = 'vxi_lang';
@@ -617,6 +618,9 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (method === 'GET' && path === '/') return send(res, 200, await homePage(lang));
+
+    if (method === 'GET' && path === '/privacy') return send(res, 200, layout('Privacy Policy', legal.privacyPolicyHtml(), null, lang));
+    if (method === 'GET' && path === '/terms') return send(res, 200, layout('Terms of Service', legal.termsOfServiceHtml(), null, lang));
 
     if (method === 'GET' && path === '/player/new') return send(res, 200, playerNewPage(lang));
     if (method === 'POST' && path === '/player/new') {
