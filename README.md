@@ -1,5 +1,7 @@
 # VerifiedXI — Phase 0 → Phase 1 (real database)
 
+**Live at [verifiedxi.onrender.com](https://verifiedxi.onrender.com)** — hosted on Render (free web service, auto-deploys on every push to `main`) with a Supabase Postgres database (connected via its session pooler, not the direct connection — see "Deploying" below for why that matters).
+
 A real, running version of the flows from the backend plan — not a mockup. The state machine, routes, and pages are plain Node.js `http` (no framework); data now lives in a real Postgres database instead of a JSON file.
 
 ## What's real vs. simulated here
@@ -111,6 +113,17 @@ npm start
 `db.js` creates the `verifiedxi` database and its tables automatically on first run — no manual migration step. Then open `http://localhost:3000`.
 
 By default it connects to `postgres://localhost:5432/verifiedxi` with no user/password (Postgres.app's default trust-auth setup). Override with `DATABASE_URL_BASE` (e.g. `postgres://user:pass@host:5432`) and `PGDATABASE` env vars if your setup differs.
+
+## Deploying
+
+The live deployment is Render (app) + Supabase (database). Two things bit us the first time and will bite you too if you skip them:
+
+1. **Use Supabase's session pooler connection, not the direct one.** Supabase's direct connection (`db.<ref>.supabase.co`) resolves IPv6-only in most regions; Render (and many hosts) only have outbound IPv4, so the app fails to even boot with a `connect ENETUNREACH` error. Use the pooler instead — in Supabase, the "Connect" panel → "Session pooler" tab gives a string like `postgresql://postgres.<ref>:[password]@aws-x-<region>.pooler.supabase.com:5432/postgres`. Split it into `DATABASE_URL_BASE` (everything up to the port) and `PGDATABASE=postgres`. If you're not sure whether a host is IPv4-reachable, check with `dig +short A <host>` (should return real addresses) and `dig +short AAAA <host>` (fine if this one's empty, since that's the point) before trusting it.
+2. **Percent-encode special characters in the database password.** A `%` in the password needs to be written as `%25` in the connection string, or the URL parser misreads it as a broken percent-escape and the connection fails silently/weirdly rather than with an obvious auth error.
+
+`db.js` auto-detects whether SSL is needed (on for anything that isn't literally `localhost`) and gracefully skips the create-database-if-missing step on providers that don't grant that permission — pointing `PGDATABASE` at the database the provider already gave you (`postgres`, for Supabase) makes that step a no-op rather than a failure.
+
+Set `APP_BASE_URL` to the real deployed URL only *after* the first successful deploy reveals what it is (Render assigns it, e.g. `https://your-app.onrender.com`) — Stripe's return-redirect and Resend's magic-link emails both build URLs from this, and both silently point at `localhost` (useless to anyone else) until it's set correctly.
 
 ## Walking through it
 
